@@ -10,15 +10,17 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Sidebar tab picker
+            // macOS Preview style compact tab bar
             Picker("Sidebar View", selection: $viewModel.selectedSidebarTab) {
                 ForEach(SidebarTab.allCases) { tab in
-                    Label(tab.rawValue, systemImage: tab.icon)
+                    Image(systemName: tab.icon)
                         .tag(tab)
+                        .help(tab.rawValue)
                 }
             }
             .pickerStyle(.segmented)
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
 
             Divider()
 
@@ -33,38 +35,47 @@ public struct SidebarView: View {
                 AnnotationsSidebarView(viewModel: viewModel)
             }
         }
-        .frame(minWidth: 220)
+        .frame(minWidth: 160, idealWidth: 220, maxWidth: 350)
     }
 }
 
-// MARK: - Thumbnails View
+// MARK: - Thumbnails View with Dynamic Layout Resizing
 struct ThumbnailsView: View {
     @ObservedObject var viewModel: AppViewModel
-    private let columns = [GridItem(.adaptive(minimum: 100, maximum: 140), spacing: 12)]
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(0..<viewModel.totalPages, id: \.self) { pageIndex in
-                        ThumbnailCell(
-                            pageIndex: pageIndex,
-                            isSelected: viewModel.currentPageIndex == pageIndex,
-                            isBookmarked: viewModel.userBookmarks.contains(pageIndex),
-                            engine: viewModel.engine,
-                            layerMode: viewModel.layerMode
-                        )
-                        .id(pageIndex)
-                        .onTapGesture {
-                            viewModel.goToPage(pageIndex)
+        GeometryReader { geo in
+            let availableWidth = max(100, geo.size.width - 24)
+            // Calculate dynamic cell width & height to fit container width
+            let targetCellWidth = min(availableWidth, max(90, availableWidth / floor(max(1, availableWidth / 110))))
+            let cellHeight = targetCellWidth * 1.3
+            let columns = [GridItem(.adaptive(minimum: targetCellWidth, maximum: targetCellWidth), spacing: 8)]
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(0..<viewModel.totalPages, id: \.self) { pageIndex in
+                            ThumbnailCell(
+                                pageIndex: pageIndex,
+                                width: targetCellWidth,
+                                height: cellHeight,
+                                isSelected: viewModel.currentPageIndex == pageIndex,
+                                isBookmarked: viewModel.userBookmarks.contains(pageIndex),
+                                engine: viewModel.engine,
+                                layerMode: viewModel.layerMode
+                            )
+                            .id(pageIndex)
+                            .onTapGesture {
+                                viewModel.goToPage(pageIndex)
+                            }
                         }
                     }
+                    .padding(8)
                 }
-                .padding(12)
-            }
-            .onChange(of: viewModel.currentPageIndex) { _, newIndex in
-                withAnimation {
-                    proxy.scrollTo(newIndex, anchor: .center)
+                .onChange(of: viewModel.currentPageIndex) { _, newIndex in
+                    withAnimation {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
                 }
             }
         }
@@ -73,6 +84,8 @@ struct ThumbnailsView: View {
 
 struct ThumbnailCell: View {
     let pageIndex: Int
+    let width: CGFloat
+    let height: CGFloat
     let isSelected: Bool
     let isBookmarked: Bool
     let engine: DjVuEngine?
@@ -81,7 +94,7 @@ struct ThumbnailCell: View {
     @State private var image: NSImage? = nil
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
                 Group {
                     if let img = image {
@@ -91,27 +104,29 @@ struct ThumbnailCell: View {
                     } else {
                         Rectangle()
                             .fill(Color(NSColor.windowBackgroundColor))
-                            .overlay(ProgressView().scaleEffect(0.7))
+                            .overlay(ProgressView().scaleEffect(0.6))
                     }
                 }
-                .frame(width: 100, height: 130)
-                .cornerRadius(6)
-                .shadow(color: isSelected ? Color.accentColor.opacity(0.6) : Color.black.opacity(0.15), radius: isSelected ? 4 : 2)
+                .frame(width: width, height: height)
+                .cornerRadius(5)
+                .shadow(color: isSelected ? Color.accentColor.opacity(0.5) : Color.black.opacity(0.12), radius: isSelected ? 4 : 2)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5)
                 )
 
                 if isBookmarked {
                     Image(systemName: "bookmark.fill")
+                        .font(.caption2)
                         .foregroundColor(.red)
-                        .padding(4)
-                        .shadow(radius: 2)
+                        .padding(3)
+                        .shadow(radius: 1.5)
                 }
             }
 
-            Text("Page \(pageIndex + 1)")
+            Text("\(pageIndex + 1)")
                 .font(.caption2)
+                .bold()
                 .foregroundColor(isSelected ? .accentColor : .secondary)
         }
         .onAppear {
@@ -123,7 +138,9 @@ struct ThumbnailCell: View {
     }
 
     private func loadThumbnail() {
-        engine?.renderPage(pageIndex: pageIndex, targetWidth: 100, targetHeight: 130, layerMode: layerMode) { img in
+        let renderW = Int(width)
+        let renderH = Int(height)
+        engine?.renderPage(pageIndex: pageIndex, targetWidth: renderW, targetHeight: renderH, layerMode: layerMode) { img in
             self.image = img
         }
     }
@@ -136,25 +153,28 @@ struct TOCView: View {
     var body: some View {
         Group {
             if viewModel.bookmarks.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Image(systemName: "book.closed")
-                        .font(.largeTitle)
+                        .font(.title2)
                         .foregroundColor(.secondary)
                     Text("No Table of Contents")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(viewModel.bookmarks, children: \.children) { item in
-                    HStack {
+                    HStack(spacing: 6) {
                         Image(systemName: "doc.text")
+                            .font(.caption)
                             .foregroundColor(.accentColor)
                         Text(item.title)
-                            .font(.body)
+                            .font(.callout)
+                            .lineLimit(1)
                         Spacer()
                         if let page = item.pageNum {
                             Text("\(page)")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -171,66 +191,118 @@ struct TOCView: View {
     }
 }
 
-// MARK: - Search Sidebar View
+// MARK: - Search Sidebar View with Cmd+F Search Controls
 struct SearchSidebarView: View {
     @ObservedObject var viewModel: AppViewModel
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
+                    .font(.caption)
+
                 TextField("Search document...", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
+                    .font(.callout)
+                    .focused($isSearchFocused)
+
                 if !viewModel.searchQuery.isEmpty {
                     Button(action: { viewModel.searchQuery = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
+                            .font(.caption)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(8)
+            .padding(6)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
-            .padding(8)
+            .cornerRadius(6)
+            .padding(6)
+
+            if !viewModel.searchResults.isEmpty {
+                HStack {
+                    Text("\(viewModel.currentMatchIndex + 1) of \(viewModel.searchResults.count) matches")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button(action: { viewModel.previousSearchMatch() }) {
+                        Image(systemName: "chevron.up")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.searchResults.isEmpty)
+
+                    Button(action: { viewModel.nextSearchMatch() }) {
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.searchResults.isEmpty)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+            }
 
             Divider()
 
             if viewModel.isSearching {
-                ProgressView("Searching...")
+                ProgressView("Searching OCR...")
+                    .font(.caption)
                     .padding()
                 Spacer()
             } else if viewModel.searchResults.isEmpty && !viewModel.searchQuery.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.largeTitle)
+                        .font(.title2)
                         .foregroundColor(.secondary)
                     Text("No matches found")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding()
                 Spacer()
             } else {
-                List(viewModel.searchResults) { result in
-                    VStack(alignment: .leading, spacing: 4) {
+                List(0..<viewModel.searchResults.count, id: \.self) { idx in
+                    let result = viewModel.searchResults[idx]
+                    let isSelected = idx == viewModel.currentMatchIndex
+
+                    VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text("Page \(result.page + 1)")
-                                .font(.caption)
+                                .font(.caption2)
                                 .bold()
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(isSelected ? .accentColor : .primary)
                             Spacer()
                         }
                         Text(result.text)
-                            .font(.subheadline)
+                            .font(.caption)
                             .lineLimit(2)
                     }
+                    .padding(4)
+                    .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .cornerRadius(4)
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        viewModel.currentMatchIndex = idx
                         viewModel.goToPage(result.page)
                     }
                 }
                 .listStyle(.sidebar)
+            }
+        }
+        .onAppear {
+            if viewModel.shouldFocusSearchField {
+                isSearchFocused = true
+                viewModel.shouldFocusSearchField = false
+            }
+        }
+        .onChange(of: viewModel.shouldFocusSearchField) { _, newValue in
+            if newValue {
+                isSearchFocused = true
+                viewModel.shouldFocusSearchField = false
             }
         }
     }
@@ -244,43 +316,46 @@ struct AnnotationsSidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Annotations")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .bold()
                 Spacer()
                 Button(action: {
                     viewModel.addAnnotation(kind: .note, rect: CGRect(x: 50, y: 50, width: 150, height: 100), noteText: "New note")
                 }) {
                     Image(systemName: "plus")
+                        .font(.caption)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(10)
+            .padding(8)
 
             Divider()
 
             if viewModel.annotations.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Image(systemName: "square.and.pencil")
-                        .font(.largeTitle)
+                        .font(.title2)
                         .foregroundColor(.secondary)
                     Text("No annotations yet")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(viewModel.annotations) { ann in
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Image(systemName: ann.kind == .highlight ? "highlighter" : "note.text")
+                                    .font(.caption2)
                                     .foregroundColor(.accentColor)
-                                Text("\(ann.kind.rawValue) (Page \(ann.pageIndex + 1))")
-                                    .font(.caption)
+                                Text("\(ann.kind.rawValue) (P. \(ann.pageIndex + 1))")
+                                    .font(.caption2)
                                     .bold()
                             }
                             if !ann.noteText.isEmpty {
                                 Text(ann.noteText)
-                                    .font(.subheadline)
+                                    .font(.caption)
                                     .foregroundColor(.primary)
                             }
                         }

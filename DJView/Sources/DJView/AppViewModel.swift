@@ -43,6 +43,8 @@ public final class AppViewModel: ObservableObject {
     @Published public var searchQuery: String = ""
     @Published public var searchResults: [SearchResult] = []
     @Published public var isSearching: Bool = false
+    @Published public var currentMatchIndex: Int = 0
+    @Published public var shouldFocusSearchField: Bool = false
 
     // Annotations
     @Published public var annotations: [Annotation] = []
@@ -72,19 +74,10 @@ public final class AppViewModel: ObservableObject {
         self.totalPages = engine.pageCount
         self.currentPageIndex = 0
 
-        // Fetch bookmarks
         self.bookmarks = engine.getBookmarks()
-
-        // Load saved state for this document
         loadReadingPosition(for: url)
-
-        // Load text layer for page 0
         loadTextLayer(pageIndex: currentPageIndex)
-
-        // Load annotations
         loadAnnotations(for: url)
-
-        // Add to recent files
         addToRecentFiles(url: url)
     }
 
@@ -123,6 +116,27 @@ public final class AppViewModel: ObservableObject {
 
     public func zoomOut() {
         setZoomScale(zoomScale - 0.15)
+    }
+
+    // MARK: - Search Activation & Navigation (Cmd+F)
+    public func activateSearch() {
+        isSidebarVisible = true
+        selectedSidebarTab = .search
+        shouldFocusSearchField = true
+    }
+
+    public func nextSearchMatch() {
+        guard !searchResults.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchResults.count
+        let match = searchResults[currentMatchIndex]
+        goToPage(match.page)
+    }
+
+    public func previousSearchMatch() {
+        guard !searchResults.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex - 1 + searchResults.count) % searchResults.count
+        let match = searchResults[currentMatchIndex]
+        goToPage(match.page)
     }
 
     public func toggleBookmarkCurrentPage() {
@@ -184,6 +198,7 @@ public final class AppViewModel: ObservableObject {
     private func performSearch(query: String) {
         guard let engine = engine, !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             searchResults = []
+            currentMatchIndex = 0
             isSearching = false
             return
         }
@@ -193,7 +208,11 @@ public final class AppViewModel: ObservableObject {
             let results = engine.searchText(query: query)
             DispatchQueue.main.async {
                 self?.searchResults = results
+                self?.currentMatchIndex = 0
                 self?.isSearching = false
+                if let firstMatch = results.first {
+                    self?.goToPage(firstMatch.page)
+                }
             }
         }
     }

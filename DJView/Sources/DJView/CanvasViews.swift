@@ -3,6 +3,7 @@ import AppKit
 
 public struct ContinuousScrollView: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var baseZoomScale: Double = 1.0
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -22,6 +23,19 @@ public struct ContinuousScrollView: View {
                 }
                 .padding(.vertical, 20)
             }
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        if baseZoomScale == 1.0 {
+                            baseZoomScale = viewModel.zoomScale
+                        }
+                        let updated = baseZoomScale * value
+                        viewModel.setZoomScale(updated)
+                    }
+                    .onEnded { _ in
+                        baseZoomScale = viewModel.zoomScale
+                    }
+            )
             .onChange(of: viewModel.currentPageIndex) { _, newIndex in
                 withAnimation {
                     proxy.scrollTo(newIndex, anchor: .top)
@@ -33,6 +47,7 @@ public struct ContinuousScrollView: View {
 
 public struct SinglePageCanvasView: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var baseZoomScale: Double = 1.0
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -47,11 +62,25 @@ public struct SinglePageCanvasView: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    if baseZoomScale == 1.0 {
+                        baseZoomScale = viewModel.zoomScale
+                    }
+                    let updated = baseZoomScale * value
+                    viewModel.setZoomScale(updated)
+                }
+                .onEnded { _ in
+                    baseZoomScale = viewModel.zoomScale
+                }
+        )
     }
 }
 
 public struct MangaPageView: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var baseZoomScale: Double = 1.0
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -60,7 +89,6 @@ public struct MangaPageView: View {
     public var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
             HStack(spacing: 16) {
-                // Right-to-Left Manga Layout: right page is index, left page is index + 1
                 let rightIndex = viewModel.currentPageIndex
                 let leftIndex = viewModel.currentPageIndex + 1
 
@@ -73,6 +101,19 @@ public struct MangaPageView: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    if baseZoomScale == 1.0 {
+                        baseZoomScale = viewModel.zoomScale
+                    }
+                    let updated = baseZoomScale * value
+                    viewModel.setZoomScale(updated)
+                }
+                .onEnded { _ in
+                    baseZoomScale = viewModel.zoomScale
+                }
+        )
     }
 }
 

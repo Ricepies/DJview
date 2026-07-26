@@ -43,6 +43,15 @@ public struct MainView: View {
             }
             return true
         }
+        .background(
+            Button(action: {
+                viewModel.activateSearch()
+            }) {
+                EmptyView()
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+        )
     }
 
     private func selectAndOpenDocument() {
@@ -135,6 +144,12 @@ struct CustomToolbar: ToolbarContent {
 
         ToolbarItemGroup(placement: .primaryAction) {
             if viewModel.engine != nil {
+                // Search Trigger Button
+                Button(action: { viewModel.activateSearch() }) {
+                    Image(systemName: "magnifyingglass")
+                }
+                .help("Search Document (Cmd+F)")
+
                 // Zoom Controls
                 HStack(spacing: 4) {
                     Button(action: { viewModel.zoomOut() }) {
