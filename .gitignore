@@ -1,0 +1,6 @@
+# Build outputs
+target/
+.build/
+DJView.app/
+*.xcodeproj
+.DS_Store

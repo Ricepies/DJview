@@ -1,0 +1,4 @@
+module CDjVuBridge {
+    header "djvu_bridge.h"
+    export *
+}
