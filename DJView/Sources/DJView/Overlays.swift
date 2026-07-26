@@ -135,11 +135,12 @@ public struct AnnotationOverlayView: View {
 
     public var body: some View {
         ZStack(alignment: .topTrailing) {
-            if let note = viewModel.getPageNote(for: pageIndex), !note.content.isEmpty {
+            let notes = viewModel.getPageNotes(for: pageIndex)
+            if !notes.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "note.text")
                         .font(.caption2)
-                    Text("Note")
+                    Text("\(notes.count)")
                         .font(.caption2)
                         .bold()
                 }

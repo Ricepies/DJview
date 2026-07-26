@@ -65,7 +65,7 @@ struct ThumbnailsView: View {
                                 height: cellHeight,
                                 isSelected: viewModel.currentPageIndex == pageIndex,
                                 isBookmarked: viewModel.isPageBookmarked(pageIndex),
-                                hasNote: viewModel.getPageNote(for: pageIndex) != nil,
+                                noteCount: viewModel.getPageNotes(for: pageIndex).count,
                                 engine: viewModel.engine,
                                 layerMode: viewModel.layerMode
                             )
@@ -80,7 +80,8 @@ struct ThumbnailsView: View {
                                 }
                                 Button("Add Note for Page \(pageIndex + 1)...") {
                                     viewModel.currentPageIndex = pageIndex
-                                    viewModel.selectedSidebarTab = .bookmarks
+                                    viewModel.createPageNote(pageIndex: pageIndex)
+                                    viewModel.isNoteTakingActive = true
                                 }
                             }
                         }
@@ -103,7 +104,7 @@ struct ThumbnailCell: View {
     let height: CGFloat
     let isSelected: Bool
     let isBookmarked: Bool
-    let hasNote: Bool
+    let noteCount: Int
     let engine: DjVuEngine?
     let layerMode: LayerMode
 
@@ -132,12 +133,18 @@ struct ThumbnailCell: View {
                 )
 
                 HStack(spacing: 4) {
-                    if hasNote {
-                        Image(systemName: "note.text")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .padding(4)
-                            .background(.regularMaterial, in: Circle())
+                    if noteCount > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "note.text")
+                                .font(.caption2)
+                            if noteCount > 1 {
+                                Text("\(noteCount)")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(.orange)
+                        .padding(4)
+                        .background(.regularMaterial, in: Capsule())
                     }
                     if isBookmarked {
                         Image(systemName: "bookmark.fill")
@@ -221,10 +228,13 @@ struct TOCView: View {
 // MARK: - Page-Associated Notes & Bookmarks Management View
 struct BookmarksAndNotesView: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var selectedNoteId: UUID? = nil
     @State private var editingNoteText: String = ""
     @State private var editingNoteTitle: String = ""
 
     var body: some View {
+        let currentNotes = viewModel.getPageNotes(for: viewModel.currentPageIndex)
+
         VStack(spacing: 0) {
             // Current Page Note Quick Editor
             VStack(alignment: .leading, spacing: 6) {
@@ -232,21 +242,55 @@ struct BookmarksAndNotesView: View {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.accentColor)
-                    Text("Page \(viewModel.currentPageIndex + 1) Note")
+                    Text("Page \(viewModel.currentPageIndex + 1) Notes")
                         .font(.system(size: 13, weight: .bold))
+
                     Spacer()
-                    if let note = viewModel.getPageNote(for: viewModel.currentPageIndex), !note.content.isEmpty {
+
+                    Button(action: {
+                        let newNote = viewModel.createPageNote(pageIndex: viewModel.currentPageIndex)
+                        selectedNoteId = newNote.id
+                        editingNoteTitle = newNote.title
+                        editingNoteText = newNote.content
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add New Note to Page \(viewModel.currentPageIndex + 1)")
+
+                    if let selectedId = selectedNoteId, let note = currentNotes.first(where: { $0.id == selectedId }) {
                         Button(action: {
                             viewModel.deletePageNote(note)
-                            editingNoteText = ""
+                            loadCurrentNote()
                         }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-                        .help("Delete Note for Current Page")
+                        .help("Delete Selected Note")
                     }
+                }
+
+                if currentNotes.count > 1 {
+                    Picker("Page Notes", selection: Binding(
+                        get: { selectedNoteId ?? currentNotes.first?.id },
+                        set: { newId in
+                            selectedNoteId = newId
+                            if let note = currentNotes.first(where: { $0.id == newId }) {
+                                editingNoteTitle = note.title
+                                editingNoteText = note.content
+                            }
+                        }
+                    )) {
+                        ForEach(currentNotes) { note in
+                            Text(note.title).tag(Optional(note.id))
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
                 }
 
                 TextField("Note Title...", text: $editingNoteTitle, onCommit: {
@@ -262,7 +306,7 @@ struct BookmarksAndNotesView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                     )
-                    .onChange(of: editingNoteText) { _, newText in
+                    .onChange(of: editingNoteText) { _, _ in
                         saveCurrentNote()
                     }
             }
@@ -361,22 +405,28 @@ struct BookmarksAndNotesView: View {
     }
 
     private func loadCurrentNote() {
-        if let note = viewModel.getPageNote(for: viewModel.currentPageIndex) {
-            editingNoteTitle = note.title
-            editingNoteText = note.content
+        let notes = viewModel.getPageNotes(for: viewModel.currentPageIndex)
+        if let first = notes.first {
+            selectedNoteId = first.id
+            editingNoteTitle = first.title
+            editingNoteText = first.content
         } else {
+            selectedNoteId = nil
             editingNoteTitle = "Page \(viewModel.currentPageIndex + 1) Note"
             editingNoteText = ""
         }
     }
 
     private func saveCurrentNote() {
-        if !editingNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            viewModel.addOrUpdatePageNote(
+        if let selectedId = selectedNoteId {
+            viewModel.updatePageNote(id: selectedId, title: editingNoteTitle, content: editingNoteText)
+        } else if !editingNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let note = viewModel.createPageNote(
                 pageIndex: viewModel.currentPageIndex,
                 title: editingNoteTitle,
                 content: editingNoteText
             )
+            selectedNoteId = note.id
         }
     }
 }

@@ -25,13 +25,23 @@ public struct MainView: View {
                 ZStack(alignment: .bottom) {
                     ZStack(alignment: .topTrailing) {
                         if viewModel.engine != nil {
-                            switch viewModel.layoutMode {
-                            case .continuous:
-                                ContinuousScrollView(viewModel: viewModel)
-                            case .singlePage:
-                                SinglePageCanvasView(viewModel: viewModel)
-                            case .manga:
-                                MangaPageView(viewModel: viewModel)
+                            Group {
+                                switch viewModel.layoutMode {
+                                case .continuous:
+                                    ContinuousScrollView(viewModel: viewModel)
+                                case .singlePage:
+                                    SinglePageCanvasView(viewModel: viewModel)
+                                case .manga:
+                                    MangaPageView(viewModel: viewModel)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if viewModel.isNoteTakingActive {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        viewModel.closeNoteTaking()
+                                    }
+                                }
                             }
                         } else {
                             EmptyStateView {
@@ -157,28 +167,43 @@ public struct MainView: View {
     }
 }
 
-// MARK: - Page Note Taking Drawer (Activated/Closed by Top Note Button)
+// MARK: - Page Note Taking Drawer with Multiple Notes Support
 struct PageNoteTopDrawer: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var selectedNoteId: UUID? = nil
     @State private var noteTitle: String = ""
     @State private var noteContent: String = ""
 
     var body: some View {
+        let currentNotes = viewModel.getPageNotes(for: viewModel.currentPageIndex)
+
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.accentColor)
-                    Text("Note for Page \(viewModel.currentPageIndex + 1)")
+                    Text("Notes for Page \(viewModel.currentPageIndex + 1)")
                         .font(.system(size: 14, weight: .bold))
 
                     Spacer()
 
-                    if let note = viewModel.getPageNote(for: viewModel.currentPageIndex), !note.content.isEmpty {
+                    // Add New Note for Current Page Button
+                    Button(action: {
+                        let newNote = viewModel.createPageNote(pageIndex: viewModel.currentPageIndex)
+                        selectedNoteId = newNote.id
+                        noteTitle = newNote.title
+                        noteContent = newNote.content
+                    }) {
+                        Label("Add Note", systemImage: "plus.circle.fill")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .buttonStyle(.borderless)
+
+                    if let selectedId = selectedNoteId, let note = currentNotes.first(where: { $0.id == selectedId }) {
                         Button(action: {
                             viewModel.deletePageNote(note)
-                            noteContent = ""
+                            loadCurrentNote()
                         }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 13))
@@ -190,7 +215,7 @@ struct PageNoteTopDrawer: View {
 
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            viewModel.toggleNoteTaking()
+                            viewModel.closeNoteTaking()
                         }
                     }) {
                         Image(systemName: "xmark.circle.fill")
@@ -198,16 +223,38 @@ struct PageNoteTopDrawer: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .help("Save & Close Note Drawer")
+                }
+
+                // Picker for Multiple Notes on Same Page
+                if currentNotes.count > 1 {
+                    Picker("Page Notes", selection: Binding(
+                        get: { selectedNoteId ?? currentNotes.first?.id },
+                        set: { newId in
+                            selectedNoteId = newId
+                            if let note = currentNotes.first(where: { $0.id == newId }) {
+                                noteTitle = note.title
+                                noteContent = note.content
+                            }
+                        }
+                    )) {
+                        ForEach(currentNotes) { note in
+                            Text(note.title).tag(Optional(note.id))
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
                 }
 
                 HStack(spacing: 10) {
                     TextField("Note Title...", text: $noteTitle)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 13, weight: .medium))
+                        .frame(width: 200)
 
                     TextEditor(text: $noteContent)
                         .font(.system(size: 13))
-                        .frame(height: 55)
+                        .frame(height: 60)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
@@ -221,36 +268,36 @@ struct PageNoteTopDrawer: View {
             Divider()
         }
         .onAppear {
-            loadNote()
+            loadCurrentNote()
         }
         .onChange(of: viewModel.currentPageIndex) { _, _ in
-            loadNote()
+            loadCurrentNote()
         }
-        .onChange(of: noteContent) { _, newContent in
-            saveNote()
+        .onChange(of: noteContent) { _, _ in
+            saveCurrentNote()
         }
         .onChange(of: noteTitle) { _, _ in
-            saveNote()
+            saveCurrentNote()
         }
     }
 
-    private func loadNote() {
-        if let note = viewModel.getPageNote(for: viewModel.currentPageIndex) {
-            noteTitle = note.title
-            noteContent = note.content
+    private func loadCurrentNote() {
+        let notes = viewModel.getPageNotes(for: viewModel.currentPageIndex)
+        if let first = notes.first {
+            selectedNoteId = first.id
+            noteTitle = first.title
+            noteContent = first.content
         } else {
-            noteTitle = "Page \(viewModel.currentPageIndex + 1) Note"
-            noteContent = ""
+            let newNote = viewModel.createPageNote(pageIndex: viewModel.currentPageIndex)
+            selectedNoteId = newNote.id
+            noteTitle = newNote.title
+            noteContent = newNote.content
         }
     }
 
-    private func saveNote() {
-        if !noteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            viewModel.addOrUpdatePageNote(
-                pageIndex: viewModel.currentPageIndex,
-                title: noteTitle,
-                content: noteContent
-            )
+    private func saveCurrentNote() {
+        if let selectedId = selectedNoteId {
+            viewModel.updatePageNote(id: selectedId, title: noteTitle, content: noteContent)
         }
     }
 }

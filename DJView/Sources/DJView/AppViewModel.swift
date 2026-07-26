@@ -49,7 +49,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var currentMatchIndex: Int = 0
     @Published public var shouldFocusSearchField: Bool = false
 
-    // Page Notes Mode & Storage
+    // Page Notes Mode & Storage (Multiple Notes per Page)
     @Published public var isNoteTakingActive: Bool = false
     @Published public var pageNotes: [PageNote] = []
     @Published public var annotations: [Annotation] = []
@@ -194,26 +194,36 @@ public final class AppViewModel: ObservableObject {
         saveBookmarksState()
     }
 
-    // MARK: - Note Taking Activation & Page Note Management
+    // MARK: - Note Taking Activation & Multiple Page Notes Management
     public func toggleNoteTaking() {
         isNoteTakingActive.toggle()
     }
 
-    public func getPageNote(for pageIndex: Int) -> PageNote? {
-        pageNotes.first(where: { $0.pageIndex == pageIndex })
+    public func closeNoteTaking() {
+        isNoteTakingActive = false
     }
 
-    public func addOrUpdatePageNote(pageIndex: Int, title: String = "", content: String) {
-        if let idx = pageNotes.firstIndex(where: { $0.pageIndex == pageIndex }) {
-            pageNotes[idx].title = title.isEmpty ? "Page \(pageIndex + 1) Note" : title
+    public func getPageNotes(for pageIndex: Int) -> [PageNote] {
+        pageNotes.filter({ $0.pageIndex == pageIndex })
+    }
+
+    @discardableResult
+    public func createPageNote(pageIndex: Int, title: String = "", content: String = "") -> PageNote {
+        let count = getPageNotes(for: pageIndex).count + 1
+        let defaultTitle = title.isEmpty ? "Note \(count) (P. \(pageIndex + 1))" : title
+        let note = PageNote(pageIndex: pageIndex, title: defaultTitle, content: content)
+        pageNotes.append(note)
+        savePageNotesState()
+        return note
+    }
+
+    public func updatePageNote(id: UUID, title: String, content: String) {
+        if let idx = pageNotes.firstIndex(where: { $0.id == id }) {
+            pageNotes[idx].title = title
             pageNotes[idx].content = content
             pageNotes[idx].updatedAt = Date()
-        } else {
-            let note = PageNote(pageIndex: pageIndex, title: title, content: content)
-            pageNotes.append(note)
-            pageNotes.sort(by: { $0.pageIndex < $1.pageIndex })
+            savePageNotesState()
         }
-        savePageNotesState()
     }
 
     public func deletePageNote(_ note: PageNote) {
