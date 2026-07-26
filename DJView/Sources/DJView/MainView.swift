@@ -34,8 +34,8 @@ public struct MainView: View {
                 // Native macOS Preview-style Top-Right Search Bar
                 if viewModel.isSearchPopupVisible {
                     NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
-                        .padding(.top, 10)
-                        .padding(.trailing, 16)
+                        .padding(.top, 12)
+                        .padding(.trailing, 18)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(100)
                 }
@@ -70,6 +70,15 @@ public struct MainView: View {
                     }
                 }) { EmptyView() }.keyboardShortcut("f", modifiers: .command)
 
+                // Cmd+D: Bookmark Page
+                Button(action: { viewModel.toggleBookmarkCurrentPage() }) { EmptyView() }.keyboardShortcut("d", modifiers: .command)
+
+                // Cmd+Shift+N: Add Sticky Note
+                Button(action: {
+                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
+                    viewModel.selectedSidebarTab = .bookmarks
+                }) { EmptyView() }.keyboardShortcut("n", modifiers: [.command, .shift])
+
                 // Cmd+,: Open Settings
                 Button(action: { isSettingsSheetPresented = true }) { EmptyView() }.keyboardShortcut(",", modifiers: .command)
 
@@ -97,21 +106,21 @@ public struct MainView: View {
     }
 }
 
-// MARK: - Native Preview-style Search Bar with Direct Cursor Focus
+// MARK: - Native Preview-style Search Bar with Larger Fonts & Focus
 struct NativeSearchPopupBar: View {
     @ObservedObject var viewModel: AppViewModel
     var isFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
 
             TextField("Search", text: $viewModel.searchQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .frame(width: 170)
+                .font(.system(size: 14))
+                .frame(width: 180)
                 .focused(isFocused)
                 .onSubmit {
                     viewModel.nextSearchMatch()
@@ -119,29 +128,29 @@ struct NativeSearchPopupBar: View {
 
             if !viewModel.searchResults.isEmpty {
                 Text("\(viewModel.currentMatchIndex + 1) of \(viewModel.searchResults.count)")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(.secondary)
             } else if viewModel.isSearching {
                 ProgressView()
-                    .scaleEffect(0.5)
-                    .frame(width: 14, height: 14)
+                    .scaleEffect(0.6)
+                    .frame(width: 16, height: 16)
             }
 
             Divider()
-                .frame(height: 14)
+                .frame(height: 16)
 
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Button(action: { viewModel.previousSearchMatch() }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.searchResults.isEmpty)
 
                 Button(action: { viewModel.nextSearchMatch() }) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.searchResults.isEmpty)
@@ -151,13 +160,13 @@ struct NativeSearchPopupBar: View {
                 viewModel.dismissSearchPopup()
             }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
         .overlay(
@@ -182,32 +191,38 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Text("DJView Preferences")
-                .font(.headline)
+                .font(.title3)
+                .bold()
 
             Form {
                 Toggle("Use Metal GPU Renderer", isOn: $viewModel.useMetalRenderer)
+                    .font(.body)
                 Picker("Default Layout Mode", selection: $viewModel.layoutMode) {
                     ForEach(ViewLayoutMode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
+                .font(.body)
                 Picker("Default Layer", selection: $viewModel.layerMode) {
                     ForEach(LayerMode.allCases) { layer in
                         Text(layer.title).tag(layer)
                     }
                 }
+                .font(.body)
             }
             .padding()
 
             Button("Done") {
                 dismiss()
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .keyboardShortcut(.defaultAction)
         }
-        .padding()
-        .frame(width: 380, height: 220)
+        .padding(20)
+        .frame(width: 400, height: 250)
     }
 }
 
@@ -215,31 +230,31 @@ struct EmptyStateView: View {
     let onOpen: () -> Void
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Image(systemName: "doc.richtext.fill")
-                .font(.system(size: 72))
+                .font(.system(size: 84))
                 .foregroundColor(.accentColor)
-                .symbolEffect(.bounce, value: true)
 
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Text("DJView Reader")
-                    .font(.title)
+                    .font(.largeTitle)
                     .bold()
                 Text("High-performance native macOS DjVu viewer with Metal acceleration")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
             }
 
             Button(action: onOpen) {
                 Label("Open DjVu File...", systemImage: "arrow.up.doc.fill")
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .font(.title3)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
             Text("Or drag and drop a .djvu file anywhere")
-                .font(.caption)
+                .font(.body)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -259,29 +274,33 @@ struct CustomToolbar: ToolbarContent {
                 }
             }) {
                 Image(systemName: "sidebar.left")
+                    .font(.system(size: 15, weight: .medium))
             }
             .help("Toggle Sidebar")
 
             Button(action: onOpenDocument) {
                 Image(systemName: "folder")
+                    .font(.system(size: 15, weight: .medium))
             }
             .help("Open DjVu File (Cmd+O)")
         }
 
         ToolbarItemGroup(placement: .principal) {
             if viewModel.totalPages > 0 {
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     Button(action: { viewModel.previousPage() }) {
                         Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
                     }
                     .disabled(viewModel.currentPageIndex <= 0)
 
                     Text("\(viewModel.currentPageIndex + 1) / \(viewModel.totalPages)")
-                        .font(.body)
+                        .font(.system(size: 15, weight: .bold))
                         .monospacedDigit()
 
                     Button(action: { viewModel.nextPage() }) {
                         Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
                     }
                     .disabled(viewModel.currentPageIndex >= viewModel.totalPages - 1)
                 }
@@ -290,7 +309,25 @@ struct CustomToolbar: ToolbarContent {
 
         ToolbarItemGroup(placement: .primaryAction) {
             if viewModel.engine != nil {
-                // Top-Right Search Trigger Button
+                // Top Bar: Bookmark Button
+                Button(action: { viewModel.toggleBookmarkCurrentPage() }) {
+                    Image(systemName: viewModel.isPageBookmarked(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(viewModel.isPageBookmarked(viewModel.currentPageIndex) ? .red : .primary)
+                }
+                .help("Bookmark Current Page (Cmd+D)")
+
+                // Top Bar: Sticky Note Creation Button
+                Button(action: {
+                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
+                    viewModel.selectedSidebarTab = .bookmarks
+                }) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .help("Add Sticky Note (Cmd+Shift+N)")
+
+                // Top Bar: Search Button
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         if viewModel.isSearchPopupVisible {
@@ -301,19 +338,22 @@ struct CustomToolbar: ToolbarContent {
                     }
                 }) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .medium))
                 }
                 .help("Search Document (Cmd+F)")
 
                 // Zoom Controls
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Button(action: { viewModel.zoomOut() }) {
                         Image(systemName: "minus.magnifyingglass")
+                            .font(.system(size: 14))
                     }
                     Text("\(Int(viewModel.zoomScale * 100))%")
-                        .font(.caption)
+                        .font(.system(size: 14, weight: .semibold))
                         .monospacedDigit()
                     Button(action: { viewModel.zoomIn() }) {
                         Image(systemName: "plus.magnifyingglass")
+                            .font(.system(size: 14))
                     }
                 }
 
@@ -326,6 +366,7 @@ struct CustomToolbar: ToolbarContent {
                     }
                 } label: {
                     Image(systemName: viewModel.layoutMode.icon)
+                        .font(.system(size: 14))
                 }
                 .help("Layout Mode")
 
@@ -338,6 +379,7 @@ struct CustomToolbar: ToolbarContent {
                     }
                 } label: {
                     Image(systemName: viewModel.layerMode.icon)
+                        .font(.system(size: 14))
                 }
                 .help("DjVu Layer Mode")
 
@@ -350,15 +392,9 @@ struct CustomToolbar: ToolbarContent {
                     }
                 } label: {
                     Image(systemName: viewModel.shaderMode.icon)
+                        .font(.system(size: 14))
                 }
                 .help("Color Filter Mode")
-
-                // Bookmark Toggle Button
-                Button(action: { viewModel.toggleBookmarkCurrentPage() }) {
-                    Image(systemName: viewModel.isPageBookmarked(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
-                        .foregroundColor(viewModel.isPageBookmarked(viewModel.currentPageIndex) ? .red : .primary)
-                }
-                .help("Bookmark Current Page (Cmd+D)")
 
                 // Export Page Button
                 Menu {
@@ -370,6 +406,7 @@ struct CustomToolbar: ToolbarContent {
                     }
                 } label: {
                     Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14))
                 }
                 .help("Export Page")
             }
