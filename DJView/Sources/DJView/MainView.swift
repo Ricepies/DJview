@@ -44,9 +44,12 @@ public struct MainView: View {
                                 }
                             }
                         } else {
-                            EmptyStateView {
-                                selectAndOpenDocument()
-                            }
+                            EmptyStateView(
+                                recentFiles: viewModel.recentFiles,
+                                onOpen: selectAndOpenDocument,
+                                onOpenRecent: { url in viewModel.openDocument(at: url) },
+                                onClearRecents: { viewModel.clearRecentFiles() }
+                            )
                         }
 
                         // Native macOS Preview-style Top-Right Search Bar
@@ -540,16 +543,20 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Empty State & Recently Opened System Welcome Screen
 struct EmptyStateView: View {
+    let recentFiles: [URL]
     let onOpen: () -> Void
+    let onOpenRecent: (URL) -> Void
+    let onClearRecents: () -> Void
 
     var body: some View {
         VStack(spacing: 24) {
             Image(systemName: "doc.richtext.fill")
-                .font(.system(size: 84))
+                .font(.system(size: 76))
                 .foregroundColor(.accentColor)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Text("DJView Reader")
                     .font(.largeTitle)
                     .bold()
@@ -562,10 +569,52 @@ struct EmptyStateView: View {
                 Label("Open DjVu File...", systemImage: "arrow.up.doc.fill")
                     .font(.title3)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 8)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+
+            if !recentFiles.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Recently Opened")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Clear", action: onClearRecents)
+                            .font(.system(size: 12))
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(recentFiles, id: \.self) { url in
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.fill")
+                                    .foregroundColor(.accentColor)
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text(url.deletingLastPathComponent().path)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.head)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onOpenRecent(url)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: 480)
+                .padding(.top, 10)
+            }
 
             Text("Or drag and drop a .djvu file anywhere")
                 .font(.body)

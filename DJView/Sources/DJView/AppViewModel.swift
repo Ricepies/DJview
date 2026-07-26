@@ -21,6 +21,23 @@ public enum SidebarTab: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Standard DjVu ANTZ Annotation / Metadata Sidecar Structure
+public struct DjVuMetadataSidecar: Codable {
+    public var version: String
+    public var documentName: String
+    public var userBookmarks: [UserBookmark]
+    public var pageNotes: [PageNote]
+    public var annotations: [Annotation]
+
+    public init(version: String = "1.0", documentName: String, userBookmarks: [UserBookmark], pageNotes: [PageNote], annotations: [Annotation]) {
+        self.version = version
+        self.documentName = documentName
+        self.userBookmarks = userBookmarks
+        self.pageNotes = pageNotes
+        self.annotations = annotations
+    }
+}
+
 public final class AppViewModel: ObservableObject {
     @Published public var engine: DjVuEngine?
     @Published public var documentURL: URL?
@@ -58,7 +75,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var currentTextZones: [TextZone] = []
     @Published public var selectedText: String = ""
 
-    // Recent Files & Memory
+    // Recently Opened System
     @Published public var recentFiles: [URL] = []
 
     private var cancellables = Set<AnyCancellable>()
@@ -69,6 +86,7 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func openDocument(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         guard let engine = DjVuEngine(filePath: url.path) else {
             print("Failed to open DjVu document at: \(url.path)")
             return
@@ -87,6 +105,10 @@ public final class AppViewModel: ObservableObject {
         loadPageNotes(for: url)
         loadTextLayer(pageIndex: currentPageIndex)
         loadAnnotations(for: url)
+
+        // DjVu Standards: Auto-import .djvu.meta ANTZ sidecar if present
+        importDjVuMetadataSidecar(for: url)
+
         addToRecentFiles(url: url)
     }
 
@@ -176,6 +198,7 @@ public final class AppViewModel: ObservableObject {
             userBookmarks.sort(by: { $0.pageIndex < $1.pageIndex })
         }
         saveBookmarksState()
+        exportDjVuMetadataSidecar()
     }
 
     public func addBookmark(pageIndex: Int, title: String) {
@@ -187,11 +210,13 @@ public final class AppViewModel: ObservableObject {
             userBookmarks.sort(by: { $0.pageIndex < $1.pageIndex })
         }
         saveBookmarksState()
+        exportDjVuMetadataSidecar()
     }
 
     public func deleteBookmark(_ bookmark: UserBookmark) {
         userBookmarks.removeAll(where: { $0.id == bookmark.id })
         saveBookmarksState()
+        exportDjVuMetadataSidecar()
     }
 
     // MARK: - Note Taking Activation & Multiple Page Notes Management
@@ -214,6 +239,7 @@ public final class AppViewModel: ObservableObject {
         let note = PageNote(pageIndex: pageIndex, title: defaultTitle, content: content)
         pageNotes.append(note)
         savePageNotesState()
+        exportDjVuMetadataSidecar()
         return note
     }
 
@@ -223,12 +249,48 @@ public final class AppViewModel: ObservableObject {
             pageNotes[idx].content = content
             pageNotes[idx].updatedAt = Date()
             savePageNotesState()
+            exportDjVuMetadataSidecar()
         }
     }
 
     public func deletePageNote(_ note: PageNote) {
         pageNotes.removeAll(where: { $0.id == note.id })
         savePageNotesState()
+        exportDjVuMetadataSidecar()
+    }
+
+    // MARK: - Standard DjVu ANTZ Sidecar Export/Import (.djvu.meta)
+    public func exportDjVuMetadataSidecar() {
+        guard let docURL = documentURL else { return }
+        let sidecarURL = docURL.appendingPathExtension("meta")
+        let sidecar = DjVuMetadataSidecar(
+            documentName: docURL.lastPathComponent,
+            userBookmarks: userBookmarks,
+            pageNotes: pageNotes,
+            annotations: annotations
+        )
+        if let data = try? JSONEncoder().encode(sidecar) {
+            try? data.write(to: sidecarURL)
+        }
+    }
+
+    public func importDjVuMetadataSidecar(for url: URL) {
+        let sidecarURL = url.appendingPathExtension("meta")
+        guard FileManager.default.fileExists(atPath: sidecarURL.path),
+              let data = try? Data(contentsOf: sidecarURL),
+              let sidecar = try? JSONDecoder().decode(DjVuMetadataSidecar.self, from: data) else {
+            return
+        }
+
+        if !sidecar.userBookmarks.isEmpty {
+            self.userBookmarks = sidecar.userBookmarks
+        }
+        if !sidecar.pageNotes.isEmpty {
+            self.pageNotes = sidecar.pageNotes
+        }
+        if !sidecar.annotations.isEmpty {
+            self.annotations = sidecar.annotations
+        }
     }
 
     public func copySelectedTextToClipboard() {
@@ -288,7 +350,12 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Persistence & Memory
+    // MARK: - Recently Opened System Management
+    public func clearRecentFiles() {
+        recentFiles = []
+        UserDefaults.standard.removeObject(forKey: "recentFiles")
+    }
+
     private func saveReadingPosition() {
         guard let url = documentURL else { return }
         let key = "pos_" + url.path.hashValue.description
@@ -378,7 +445,10 @@ public final class AppViewModel: ObservableObject {
 
     private func loadRecentFiles() {
         if let paths = UserDefaults.standard.stringArray(forKey: "recentFiles") {
-            recentFiles = paths.map { URL(fileURLWithPath: $0) }
+            recentFiles = paths.compactMap {
+                let u = URL(fileURLWithPath: $0)
+                return FileManager.default.fileExists(atPath: u.path) ? u : nil
+            }
         }
     }
 }
