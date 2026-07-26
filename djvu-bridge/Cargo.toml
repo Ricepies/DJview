@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib", "cdylib", "rlib"]
+name = "djvu_bridge"
+crate-type = ["staticlib"]
 
 [dependencies]
-djvu-rs = { version = "0.27.0", features = ["std", "pdf", "image", "serde"] }
+djvu-rs = "0.27.0"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

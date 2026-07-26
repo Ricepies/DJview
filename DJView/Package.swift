@@ -22,7 +22,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags([
                     "-L", "../djvu-bridge/target/release",
-                    "-ldjvu_bridge"
+                    "../djvu-bridge/target/release/libdjvu_bridge.a"
                 ])
             ]
         )
