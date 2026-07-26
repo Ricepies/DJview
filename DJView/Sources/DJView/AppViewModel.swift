@@ -363,15 +363,24 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Recently Opened System & Per-File Complete Settings Memory
+    // MARK: - Recently Opened System & Deterministic Per-File Complete Settings Memory
     public func clearRecentFiles() {
         recentFiles = []
         UserDefaults.standard.removeObject(forKey: "recentFiles")
     }
 
+    private func fileKey(for url: URL, prefix: String) -> String {
+        let pathData = Data(url.path.utf8)
+        let base64 = pathData.base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+        return "\(prefix)_\(base64)"
+    }
+
     public func saveReadingPosition() {
         guard !isRestoringState, let url = documentURL else { return }
-        let key = "pos_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "pos")
         let pos = DocumentPosition(
             pageIndex: currentPageIndex,
             scrollOffsetY: 0.0,
@@ -387,7 +396,7 @@ public final class AppViewModel: ObservableObject {
     }
 
     private func loadReadingPosition(for url: URL) {
-        let key = "pos_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "pos")
         if let data = UserDefaults.standard.data(forKey: key),
            let pos = try? JSONDecoder().decode(DocumentPosition.self, from: data) {
             let idx = max(0, min(totalPages - 1, pos.pageIndex))
@@ -413,14 +422,14 @@ public final class AppViewModel: ObservableObject {
 
     private func saveBookmarksState() {
         guard let url = documentURL else { return }
-        let key = "ubm_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "ubm")
         if let data = try? JSONEncoder().encode(userBookmarks) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
 
     private func loadUserBookmarks(for url: URL) {
-        let key = "ubm_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "ubm")
         if let data = UserDefaults.standard.data(forKey: key),
            let bms = try? JSONDecoder().decode([UserBookmark].self, from: data) {
             self.userBookmarks = bms
@@ -429,14 +438,14 @@ public final class AppViewModel: ObservableObject {
 
     private func savePageNotesState() {
         guard let url = documentURL else { return }
-        let key = "pnotes_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "pnotes")
         if let data = try? JSONEncoder().encode(pageNotes) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
 
     private func loadPageNotes(for url: URL) {
-        let key = "pnotes_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "pnotes")
         if let data = UserDefaults.standard.data(forKey: key),
            let notes = try? JSONDecoder().decode([PageNote].self, from: data) {
             self.pageNotes = notes
@@ -444,7 +453,7 @@ public final class AppViewModel: ObservableObject {
     }
 
     private func loadAnnotations(for url: URL) {
-        let key = "ann_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "ann")
         if let data = UserDefaults.standard.data(forKey: key),
            let list = try? JSONDecoder().decode([Annotation].self, from: data) {
             self.annotations = list
@@ -453,7 +462,7 @@ public final class AppViewModel: ObservableObject {
 
     public func saveAnnotationsState() {
         guard let url = documentURL else { return }
-        let key = "ann_" + url.path.hashValue.description
+        let key = fileKey(for: url, prefix: "ann")
         if let data = try? JSONEncoder().encode(annotations) {
             UserDefaults.standard.set(data, forKey: key)
         }
