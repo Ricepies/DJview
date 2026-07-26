@@ -105,7 +105,8 @@ public struct SinglePageCanvasView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
     @State private var eventMonitor: Any? = nil
-    @State private var lastScrollTime: Date = .distantPast
+    @State private var hasTriggeredInCurrentGesture: Bool = false
+    @State private var lastFlipTime: Date = .distantPast
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -153,23 +154,40 @@ public struct SinglePageCanvasView: View {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard viewModel.layoutMode == .singlePage else { return event }
 
+            // Ignore momentum/inertia events from trackpad deceleration
+            if event.momentumPhase != [] {
+                return nil
+            }
+
+            if event.phase == .ended || event.phase == .cancelled {
+                hasTriggeredInCurrentGesture = false
+                return event
+            }
+
+            if event.phase == .began {
+                hasTriggeredInCurrentGesture = false
+            }
+
             let now = Date()
-            guard now.timeIntervalSince(lastScrollTime) > 0.30 else { return event }
+            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.40 else {
+                return nil
+            }
 
             let dx = event.scrollingDeltaX
             let dy = event.scrollingDeltaY
 
-            // Side swipe (horizontal dx) or mouse scroll wheel / trackpad (vertical dy)
-            if dx < -3.0 || dy < -3.0 {
-                lastScrollTime = now
+            if dx < -5.0 || dy < -5.0 {
+                hasTriggeredInCurrentGesture = true
+                lastFlipTime = now
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.nextPage()
                     }
                 }
                 return nil
-            } else if dx > 3.0 || dy > 3.0 {
-                lastScrollTime = now
+            } else if dx > 5.0 || dy > 5.0 {
+                hasTriggeredInCurrentGesture = true
+                lastFlipTime = now
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.previousPage()
@@ -193,7 +211,8 @@ public struct MangaPageView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
     @State private var eventMonitor: Any? = nil
-    @State private var lastScrollTime: Date = .distantPast
+    @State private var hasTriggeredInCurrentGesture: Bool = false
+    @State private var lastFlipTime: Date = .distantPast
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -247,25 +266,40 @@ public struct MangaPageView: View {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard viewModel.layoutMode == .manga else { return event }
 
+            // Ignore momentum/inertia events from trackpad deceleration
+            if event.momentumPhase != [] {
+                return nil
+            }
+
+            if event.phase == .ended || event.phase == .cancelled {
+                hasTriggeredInCurrentGesture = false
+                return event
+            }
+
+            if event.phase == .began {
+                hasTriggeredInCurrentGesture = false
+            }
+
             let now = Date()
-            guard now.timeIntervalSince(lastScrollTime) > 0.30 else { return event }
+            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.40 else {
+                return nil
+            }
 
             let dx = event.scrollingDeltaX
             let dy = event.scrollingDeltaY
 
-            // In Manga mode (Right-to-Left):
-            // Swiping right to left (dx < -3) or scrolling down (dy < -3) -> next page
-            // Swiping left to right (dx > 3) or scrolling up (dy > 3) -> previous page
-            if dx < -3.0 || dy < -3.0 {
-                lastScrollTime = now
+            if dx < -5.0 || dy < -5.0 {
+                hasTriggeredInCurrentGesture = true
+                lastFlipTime = now
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.nextPage()
                     }
                 }
                 return nil
-            } else if dx > 3.0 || dy > 3.0 {
-                lastScrollTime = now
+            } else if dx > 5.0 || dy > 5.0 {
+                hasTriggeredInCurrentGesture = true
+                lastFlipTime = now
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.previousPage()
