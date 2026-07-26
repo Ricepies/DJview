@@ -1,30 +1,159 @@
 import Foundation
 import CoreGraphics
-import SwiftUI
 
-public enum LayerMode: UInt32, CaseIterable, Identifiable {
+public struct DocumentPosition: Codable {
+    public var pageIndex: Int
+    public var scrollOffsetY: Double
+    public var zoomScale: Double
+    public var layoutMode: String
+
+    public init(pageIndex: Int, scrollOffsetY: Double, zoomScale: Double, layoutMode: String) {
+        self.pageIndex = pageIndex
+        self.scrollOffsetY = scrollOffsetY
+        self.zoomScale = zoomScale
+        self.layoutMode = layoutMode
+    }
+}
+
+public struct UserBookmark: Identifiable, Codable, Equatable {
+    public var id: UUID
+    public var pageIndex: Int
+    public var title: String
+    public var createdAt: Date
+
+    public init(id: UUID = UUID(), pageIndex: Int, title: String, createdAt: Date = Date()) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.title = title
+        self.createdAt = createdAt
+    }
+}
+
+public struct PageNote: Identifiable, Codable, Equatable {
+    public var id: UUID
+    public var pageIndex: Int
+    public var title: String
+    public var content: String
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    public init(id: UUID = UUID(), pageIndex: Int, title: String = "", content: String = "", createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.title = title.isEmpty ? "Page \(pageIndex + 1) Note" : title
+        self.content = content
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum AnnotationKind: String, Codable {
+    case highlight = "Highlight"
+    case note = "Note"
+    case box = "Box"
+}
+
+public struct Annotation: Identifiable, Codable, Equatable {
+    public var id: UUID
+    public var pageIndex: Int
+    public var kind: AnnotationKind
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+    public var colorHex: String
+    public var noteText: String
+
+    public init(
+        id: UUID = UUID(),
+        pageIndex: Int,
+        kind: AnnotationKind,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        colorHex: String = "#FFEB3B",
+        noteText: String = ""
+    ) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.kind = kind
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.colorHex = colorHex
+        self.noteText = noteText
+    }
+}
+
+public struct BookmarkItem: Identifiable, Hashable, Codable {
+    public var id: UUID
+    public let title: String
+    public let pageNum: Int?
+    public let children: [BookmarkItem]?
+
+    public init(id: UUID = UUID(), title: String, pageNum: Int?, children: [BookmarkItem]? = nil) {
+        self.id = id
+        self.title = title
+        self.pageNum = pageNum
+        self.children = children
+    }
+}
+
+public struct TextZone: Identifiable, Hashable, Codable {
+    public var id: UUID
+    public let text: String
+    public let rect: CGRect
+    public let kind: String
+    public let children: [TextZone]
+
+    public init(id: UUID = UUID(), text: String, rect: CGRect, kind: String, children: [TextZone] = []) {
+        self.id = id
+        self.text = text
+        self.rect = rect
+        self.kind = kind
+        self.children = children
+    }
+}
+
+public struct SearchResult: Identifiable, Hashable, Codable {
+    public var id: UUID
+    public let page: Int
+    public let text: String
+    public let rect: CGRect
+
+    public init(id: UUID = UUID(), page: Int, text: String, rect: CGRect) {
+        self.id = id
+        self.page = page
+        self.text = text
+        self.rect = rect
+    }
+}
+
+public enum LayerMode: Int, CaseIterable, Identifiable {
     case composite = 0
-    case foreground = 1
-    case background = 2
+    case background = 1
+    case foreground = 2
     case mask = 3
 
-    public var id: UInt32 { rawValue }
+    public var id: Int { rawValue }
 
     public var title: String {
         switch self {
         case .composite: return "Full Color"
-        case .foreground: return "Foreground"
-        case .background: return "Background"
-        case .mask: return "Mask (B&W)"
+        case .background: return "Background Layer"
+        case .foreground: return "Foreground Layer"
+        case .mask: return "B&W Text Mask"
         }
     }
 
     public var icon: String {
         switch self {
-        case .composite: return "paintpalette.fill"
-        case .foreground: return "square.2.layers.50.top.filled"
-        case .background: return "square.2.layers.50.bottom.filled"
-        case .mask: return "circle.lefthalf.filled"
+        case .composite: return "photo.on.rectangle"
+        case .background: return "photo"
+        case .foreground: return "paintpalette"
+        case .mask: return "doc.text"
         }
     }
 }
@@ -40,9 +169,9 @@ public enum ColorShaderMode: String, CaseIterable, Identifiable {
 
     public var icon: String {
         switch self {
-        case .normal: return "sun.max.fill"
-        case .invert: return "moon.fill"
-        case .sepia: return "book.closed.fill"
+        case .normal: return "sun.max"
+        case .invert: return "moon.stars"
+        case .sepia: return "book"
         case .grayscale: return "circle.righthalf.filled"
         case .highContrast: return "slider.vertical.3"
         }
@@ -52,15 +181,15 @@ public enum ColorShaderMode: String, CaseIterable, Identifiable {
 public enum ViewLayoutMode: String, CaseIterable, Identifiable {
     case continuous = "Continuous Scroll"
     case singlePage = "Single Page"
-    case manga = "Manga (Dual Page RTL)"
+    case manga = "Manga Mode (Dual Right-to-Left)"
 
     public var id: String { rawValue }
 
     public var icon: String {
         switch self {
-        case .continuous: return "doc.on.doc.fill"
-        case .singlePage: return "doc.fill"
-        case .manga: return "book.pages.fill"
+        case .continuous: return "scroll"
+        case .singlePage: return "doc"
+        case .manga: return "book.closed"
         }
     }
 }
@@ -68,123 +197,5 @@ public enum ViewLayoutMode: String, CaseIterable, Identifiable {
 public enum ZoomMode: Equatable {
     case fitWidth
     case fitPage
-    case actualSize
     case custom(Double)
-
-    public var title: String {
-        switch self {
-        case .fitWidth: return "Fit Width"
-        case .fitPage: return "Fit Page"
-        case .actualSize: return "Actual Size (100%)"
-        case .custom(let val): return "\(Int(val * 100))%"
-        }
-    }
-}
-
-public struct BookmarkItem: Identifiable, Codable, Hashable {
-    public var id = UUID()
-    public let title: String
-    public let pageNum: Int?
-    public let url: String?
-    public let children: [BookmarkItem]?
-
-    enum CodingKeys: String, CodingKey {
-        case title
-        case pageNum = "page_num"
-        case url
-        case children
-    }
-}
-
-public struct UserBookmark: Identifiable, Codable, Hashable {
-    public var id = UUID()
-    public let pageIndex: Int
-    public var title: String
-    public let dateAdded: Date
-
-    public init(pageIndex: Int, title: String, dateAdded: Date = Date()) {
-        self.pageIndex = pageIndex
-        self.title = title
-        self.dateAdded = dateAdded
-    }
-}
-
-public struct TextZone: Identifiable, Codable {
-    public var id = UUID()
-    public let kind: String
-    public let text: String
-    public let x: UInt32
-    public let y: UInt32
-    public let width: UInt32
-    public let height: UInt32
-    public let children: [TextZone]
-
-    public var rect: CGRect {
-        CGRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case kind, text, x, y, width, height, children
-    }
-}
-
-public struct SearchResult: Identifiable, Codable, Hashable {
-    public var id = UUID()
-    public let page: Int
-    public let text: String
-    public let x: UInt32
-    public let y: UInt32
-    public let width: UInt32
-    public let height: UInt32
-
-    public var rect: CGRect {
-        CGRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case page, text, x, y, width, height
-    }
-}
-
-public enum AnnotationKind: String, Codable, CaseIterable {
-    case highlight = "Highlight"
-    case note = "Sticky Note"
-    case rect = "Rectangle"
-}
-
-public struct Annotation: Identifiable, Codable, Hashable {
-    public var id = UUID()
-    public let pageIndex: Int
-    public let kind: AnnotationKind
-    public var x: Double
-    public var y: Double
-    public var width: Double
-    public var height: Double
-    public var colorHex: String
-    public var noteText: String
-    public let dateCreated: Date
-
-    public init(id: UUID = UUID(), pageIndex: Int, kind: AnnotationKind, x: Double, y: Double, width: Double, height: Double, colorHex: String = "#FFEB3B", noteText: String = "", dateCreated: Date = Date()) {
-        self.id = id
-        self.pageIndex = pageIndex
-        self.kind = kind
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-        self.colorHex = colorHex
-        self.noteText = noteText
-        self.dateCreated = dateCreated
-    }
-
-    public var rect: CGRect {
-        CGRect(x: x, y: y, width: width, height: height)
-    }
-}
-
-public struct DocumentPosition: Codable {
-    public var pageIndex: Int
-    public var scrollOffsetY: Double
-    public var zoomScale: Double
-    public var layoutMode: String
 }

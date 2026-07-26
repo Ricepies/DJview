@@ -1,60 +1,58 @@
 import Foundation
 import AppKit
+import CoreGraphics
 import CDjVuBridge
 
-public final class DjVuEngine: @unchecked Sendable {
-    private var ctx: OpaquePointer?
-    private let queue = DispatchQueue(label: "org.djview.engine", qos: .userInitiated, attributes: .concurrent)
+public final class DjVuEngine {
+    private let docPtr: OpaquePointer
+    private let pageCache = NSCache<NSString, NSImage>()
+    private let rawDataCache = NSCache<NSString, NSData>()
 
-    // Memory-managed LRU cache for rendered RGBA buffers and NSImages
-    private let rawBufferCache = NSCache<NSString, NSData>()
-    private let imageCache = NSCache<NSString, NSImage>()
-
-    public let filePath: String
+    public var pageCount: Int {
+        Int(djvu_doc_page_count(docPtr))
+    }
 
     public init?(filePath: String) {
-        self.filePath = filePath
-        let ptr = djvu_doc_open(filePath)
-        guard let validPtr = ptr else { return nil }
-        self.ctx = validPtr
+        guard let ctx = djvu_doc_open(filePath) else {
+            return nil
+        }
+        self.docPtr = ctx
 
-        // Limit memory footprint: max 40 page renders in RAM (~160MB for typical 1080p pages)
-        rawBufferCache.countLimit = 40
-        imageCache.countLimit = 40
+        // Configure cache limits for high-performance lazy loading
+        pageCache.countLimit = 40
+        rawDataCache.countLimit = 40
     }
 
     deinit {
-        if let validPtr = ctx {
-            djvu_doc_free(validPtr)
-        }
-    }
-
-    public var pageCount: Int {
-        guard let ctx = ctx else { return 0 }
-        return Int(djvu_doc_page_count(ctx))
+        djvu_doc_free(docPtr)
     }
 
     public func getPageDimension(pageIndex: Int) -> (width: Int, height: Int, dpi: Int)? {
-        guard let ctx = ctx, pageIndex >= 0, pageIndex < pageCount else { return nil }
         var w: UInt32 = 0
         var h: UInt32 = 0
         var dpi: UInt16 = 0
-        let res = djvu_doc_get_page_dimension(ctx, UInt32(pageIndex), &w, &h, &dpi)
+        let res = djvu_doc_get_page_dimension(docPtr, UInt32(pageIndex), &w, &h, &dpi)
         guard res == 0 else { return nil }
         return (Int(w), Int(h), Int(dpi))
     }
 
-    public func renderPage(pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite, completion: @escaping (NSImage?) -> Void) {
+    public func renderPage(
+        pageIndex: Int,
+        targetWidth: Int = 0,
+        targetHeight: Int = 0,
+        layerMode: LayerMode = .composite,
+        completion: @escaping (NSImage?) -> Void
+    ) {
         let cacheKey = "\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)" as NSString
-
-        if let cachedImg = imageCache.object(forKey: cacheKey) {
-            completion(cachedImg)
+        if let cached = pageCache.object(forKey: cacheKey) {
+            completion(cached)
             return
         }
 
-        queue.async { [weak self] in
-            guard let self = self, let ctx = self.ctx else {
-                completion(nil)
+        let ctx = self.docPtr
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard pageIndex >= 0 && pageIndex < Int(djvu_doc_page_count(ctx)) else {
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
 
@@ -67,22 +65,22 @@ public final class DjVuEngine: @unchecked Sendable {
 
             let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
                 guard let base = ptr.baseAddress else { return -1 }
-                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), layerMode.rawValue, base)
+                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
             }
 
             guard res == 0 else {
-                completion(nil)
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
 
             let data = Data(buffer)
             guard let provider = CGDataProvider(data: data as CFData) else {
-                completion(nil)
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
 
             let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
 
             guard let cgImage = CGImage(
                 width: w,
@@ -97,51 +95,58 @@ public final class DjVuEngine: @unchecked Sendable {
                 shouldInterpolate: true,
                 intent: .defaultIntent
             ) else {
-                completion(nil)
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
 
-            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
-            self.imageCache.setObject(nsImage, forKey: cacheKey)
+            let img = NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+            self.pageCache.setObject(img, forKey: cacheKey)
 
             DispatchQueue.main.async {
-                completion(nsImage)
+                completion(img)
             }
         }
     }
 
-    public func renderPageRawRGBA(pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite, completion: @escaping (Data?, Int, Int) -> Void) {
-        let (dw, dh, _) = self.getPageDimension(pageIndex: pageIndex) ?? (300, 400, 72)
-        let w = targetWidth > 0 ? targetWidth : dw
-        let h = targetHeight > 0 ? targetHeight : dh
-        let cacheKey = "\(pageIndex)_\(w)_\(h)_\(layerMode.rawValue)" as NSString
-
-        if let cachedData = rawBufferCache.object(forKey: cacheKey) {
-            completion(cachedData as Data, w, h)
+    public func renderPageRawRGBA(
+        pageIndex: Int,
+        targetWidth: Int = 0,
+        targetHeight: Int = 0,
+        layerMode: LayerMode = .composite,
+        completion: @escaping (Data?, Int, Int) -> Void
+    ) {
+        let cacheKey = "raw_\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)" as NSString
+        if let cached = rawDataCache.object(forKey: cacheKey) {
+            completion(cached as Data, targetWidth, targetHeight)
             return
         }
 
-        queue.async { [weak self] in
-            guard let self = self, let ctx = self.ctx else {
-                completion(nil, 0, 0)
+        let ctx = self.docPtr
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard pageIndex >= 0 && pageIndex < Int(djvu_doc_page_count(ctx)) else {
+                DispatchQueue.main.async { completion(nil, 0, 0) }
                 return
             }
+
+            let (dw, dh, _) = self.getPageDimension(pageIndex: pageIndex) ?? (300, 400, 72)
+            let w = targetWidth > 0 ? targetWidth : dw
+            let h = targetHeight > 0 ? targetHeight : dh
 
             let byteCount = w * h * 4
             var buffer = [UInt8](repeating: 0, count: byteCount)
 
             let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
                 guard let base = ptr.baseAddress else { return -1 }
-                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), layerMode.rawValue, base)
+                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
             }
 
             guard res == 0 else {
-                completion(nil, 0, 0)
+                DispatchQueue.main.async { completion(nil, 0, 0) }
                 return
             }
 
             let data = Data(buffer)
-            self.rawBufferCache.setObject(data as NSData, forKey: cacheKey)
+            self.rawDataCache.setObject(data as NSData, forKey: cacheKey)
 
             DispatchQueue.main.async {
                 completion(data, w, h)
@@ -149,26 +154,15 @@ public final class DjVuEngine: @unchecked Sendable {
         }
     }
 
-    // Prefetch adjacent pages in background for ultra-smooth fast scrolling
-    public func prefetchPages(around pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite) {
-        let count = pageCount
-        let range = max(0, pageIndex - 2)...min(count - 1, pageIndex + 2)
-
-        for p in range where p != pageIndex {
-            let (dw, dh, _) = getPageDimension(pageIndex: p) ?? (300, 400, 72)
-            let w = targetWidth > 0 ? targetWidth : dw
-            let h = targetHeight > 0 ? targetHeight : dh
-            let cacheKey = "\(p)_\(w)_\(h)_\(layerMode.rawValue)" as NSString
-
-            if rawBufferCache.object(forKey: cacheKey) == nil {
-                renderPageRawRGBA(pageIndex: p, targetWidth: w, targetHeight: h, layerMode: layerMode) { _, _, _ in }
-            }
+    public func prefetchPages(around centerPage: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode) {
+        let range = max(0, centerPage - 2)...min(pageCount - 1, centerPage + 2)
+        for p in range where p != centerPage {
+            renderPage(pageIndex: p, targetWidth: targetWidth, targetHeight: targetHeight, layerMode: layerMode) { _ in }
         }
     }
 
     public func getBookmarks() -> [BookmarkItem] {
-        guard let ctx = ctx else { return [] }
-        guard let cStr = djvu_doc_get_bookmarks_json(ctx) else { return [] }
+        guard let cStr = djvu_doc_get_bookmarks_json(docPtr) else { return [] }
         defer { djvu_string_free(cStr) }
         let jsonStr = String(cString: cStr)
         guard let data = jsonStr.data(using: .utf8) else { return [] }
@@ -176,8 +170,7 @@ public final class DjVuEngine: @unchecked Sendable {
     }
 
     public func getTextZones(pageIndex: Int) -> [TextZone] {
-        guard let ctx = ctx, pageIndex >= 0, pageIndex < pageCount else { return [] }
-        guard let cStr = djvu_doc_get_text_zones_json(ctx, UInt32(pageIndex)) else { return [] }
+        guard let cStr = djvu_doc_get_text_zones_json(docPtr, UInt32(pageIndex)) else { return [] }
         defer { djvu_string_free(cStr) }
         let jsonStr = String(cString: cStr)
         guard let data = jsonStr.data(using: .utf8) else { return [] }
@@ -185,8 +178,7 @@ public final class DjVuEngine: @unchecked Sendable {
     }
 
     public func searchText(query: String) -> [SearchResult] {
-        guard let ctx = ctx, !query.isEmpty else { return [] }
-        guard let cStr = djvu_doc_search_text_json(ctx, query) else { return [] }
+        guard let cStr = djvu_doc_search_text_json(docPtr, query) else { return [] }
         defer { djvu_string_free(cStr) }
         let jsonStr = String(cString: cStr)
         guard let data = jsonStr.data(using: .utf8) else { return [] }
@@ -194,8 +186,7 @@ public final class DjVuEngine: @unchecked Sendable {
     }
 
     public func exportPage(pageIndex: Int, format: Int, outputPath: String) -> Bool {
-        guard let ctx = ctx, pageIndex >= 0, pageIndex < pageCount else { return false }
-        let res = djvu_doc_export_page(ctx, UInt32(pageIndex), UInt32(format), outputPath)
+        let res = djvu_doc_export_page(docPtr, UInt32(pageIndex), UInt32(format), outputPath)
         return res == 0
     }
 }

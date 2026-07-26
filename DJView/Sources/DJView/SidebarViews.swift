@@ -65,6 +65,7 @@ struct ThumbnailsView: View {
                                 height: cellHeight,
                                 isSelected: viewModel.currentPageIndex == pageIndex,
                                 isBookmarked: viewModel.isPageBookmarked(pageIndex),
+                                hasNote: viewModel.getPageNote(for: pageIndex) != nil,
                                 engine: viewModel.engine,
                                 layerMode: viewModel.layerMode
                             )
@@ -77,8 +78,9 @@ struct ThumbnailsView: View {
                                     viewModel.currentPageIndex = pageIndex
                                     viewModel.toggleBookmarkCurrentPage()
                                 }
-                                Button("Add Sticky Note Here...") {
-                                    viewModel.addStickyNote(pageIndex: pageIndex, noteText: "Note on page \(pageIndex + 1)")
+                                Button("Add Note for Page \(pageIndex + 1)...") {
+                                    viewModel.currentPageIndex = pageIndex
+                                    viewModel.selectedSidebarTab = .bookmarks
                                 }
                             }
                         }
@@ -101,6 +103,7 @@ struct ThumbnailCell: View {
     let height: CGFloat
     let isSelected: Bool
     let isBookmarked: Bool
+    let hasNote: Bool
     let engine: DjVuEngine?
     let layerMode: LayerMode
 
@@ -128,13 +131,23 @@ struct ThumbnailCell: View {
                         .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2.5 : 1)
                 )
 
-                if isBookmarked {
-                    Image(systemName: "bookmark.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding(5)
-                        .shadow(radius: 1)
+                HStack(spacing: 4) {
+                    if hasNote {
+                        Image(systemName: "note.text")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                            .padding(4)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    if isBookmarked {
+                        Image(systemName: "bookmark.fill")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                            .padding(4)
+                            .background(.regularMaterial, in: Circle())
+                    }
                 }
+                .padding(4)
             }
 
             Text("\(pageIndex + 1)")
@@ -205,39 +218,56 @@ struct TOCView: View {
     }
 }
 
-// MARK: - Unified Bookmarks & Notes System View (Apple HIG Compliant & High Visibility)
+// MARK: - Page-Associated Notes & Bookmarks Management View
 struct BookmarksAndNotesView: View {
     @ObservedObject var viewModel: AppViewModel
-    @State private var editingNoteId: UUID? = nil
     @State private var editingNoteText: String = ""
+    @State private var editingNoteTitle: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            // Action Header
-            HStack {
-                Text("Bookmarks & Notes")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Button(action: {
-                    viewModel.toggleBookmarkCurrentPage()
-                }) {
-                    Label("Bookmark Page", systemImage: viewModel.isPageBookmarked(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .buttonStyle(.borderless)
-
-                Button(action: {
-                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
-                }) {
+            // Current Page Note Quick Editor
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                    Text("Page \(viewModel.currentPageIndex + 1) Note")
+                        .font(.system(size: 13, weight: .bold))
+                    Spacer()
+                    if let note = viewModel.getPageNote(for: viewModel.currentPageIndex), !note.content.isEmpty {
+                        Button(action: {
+                            viewModel.deletePageNote(note)
+                            editingNoteText = ""
+                        }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete Note for Current Page")
+                    }
                 }
-                .buttonStyle(.borderless)
-                .help("Add Sticky Note")
+
+                TextField("Note Title...", text: $editingNoteTitle, onCommit: {
+                    saveCurrentNote()
+                })
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, weight: .medium))
+
+                TextEditor(text: $editingNoteText)
+                    .font(.system(size: 13))
+                    .frame(height: 85)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                    .onChange(of: editingNoteText) { _, newText in
+                        saveCurrentNote()
+                    }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(10)
+            .background(Color(NSColor.controlBackgroundColor))
 
             Divider()
 
@@ -277,57 +307,43 @@ struct BookmarksAndNotesView: View {
                     }
                 }
 
-                // Section 2: Sticky Notes & Highlights
-                Section(header: Text("STICKY NOTES & HIGHLIGHTS (\(viewModel.annotations.count))").font(.system(size: 11, weight: .bold)).foregroundColor(.secondary)) {
-                    if viewModel.annotations.isEmpty {
-                        Text("No notes or highlights added")
+                // Section 2: Page Notes Directory
+                Section(header: Text("PAGE NOTES DIRECTORY (\(viewModel.pageNotes.count))").font(.system(size: 11, weight: .bold)).foregroundColor(.secondary)) {
+                    if viewModel.pageNotes.isEmpty {
+                        Text("No notes written yet")
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
                     } else {
-                        ForEach(viewModel.annotations) { ann in
+                        ForEach(viewModel.pageNotes) { note in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Image(systemName: ann.kind == .highlight ? "highlighter" : "note.text")
+                                    Image(systemName: "note.text")
                                         .font(.system(size: 13))
-                                        .foregroundColor(.accentColor)
-                                    Text("\(ann.kind.rawValue) (P. \(ann.pageIndex + 1))")
+                                        .foregroundColor(.orange)
+                                    Text(note.title)
                                         .font(.system(size: 13, weight: .bold))
                                     Spacer()
+                                    Text("P. \(note.pageIndex + 1)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
                                 }
 
-                                if editingNoteId == ann.id {
-                                    HStack {
-                                        TextField("Edit note...", text: $editingNoteText, onCommit: {
-                                            viewModel.updateAnnotationNoteText(id: ann.id, newText: editingNoteText)
-                                            editingNoteId = nil
-                                        })
-                                        .textFieldStyle(.roundedBorder)
-                                        .font(.system(size: 13))
-
-                                        Button("Done") {
-                                            viewModel.updateAnnotationNoteText(id: ann.id, newText: editingNoteText)
-                                            editingNoteId = nil
-                                        }
-                                        .font(.system(size: 12, weight: .semibold))
-                                    }
-                                } else if !ann.noteText.isEmpty {
-                                    Text(ann.noteText)
-                                        .font(.system(size: 13))
-                                        .foregroundColor(.primary)
+                                if !note.content.isEmpty {
+                                    Text(note.content)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2)
                                 }
                             }
                             .padding(.vertical, 4)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                viewModel.goToPage(ann.pageIndex, animated: false)
+                                viewModel.goToPage(note.pageIndex, animated: false)
                             }
                             .contextMenu {
-                                Button("Edit Note...") {
-                                    editingNoteId = ann.id
-                                    editingNoteText = ann.noteText
-                                }
                                 Button("Delete Note", role: .destructive) {
-                                    viewModel.deleteAnnotation(ann)
+                                    viewModel.deletePageNote(note)
                                 }
                             }
                         }
@@ -335,6 +351,32 @@ struct BookmarksAndNotesView: View {
                 }
             }
             .listStyle(.sidebar)
+        }
+        .onAppear {
+            loadCurrentNote()
+        }
+        .onChange(of: viewModel.currentPageIndex) { _, _ in
+            loadCurrentNote()
+        }
+    }
+
+    private func loadCurrentNote() {
+        if let note = viewModel.getPageNote(for: viewModel.currentPageIndex) {
+            editingNoteTitle = note.title
+            editingNoteText = note.content
+        } else {
+            editingNoteTitle = "Page \(viewModel.currentPageIndex + 1) Note"
+            editingNoteText = ""
+        }
+    }
+
+    private func saveCurrentNote() {
+        if !editingNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            viewModel.addOrUpdatePageNote(
+                pageIndex: viewModel.currentPageIndex,
+                title: editingNoteTitle,
+                content: editingNoteText
+            )
         }
     }
 }

@@ -49,7 +49,8 @@ public final class AppViewModel: ObservableObject {
     @Published public var currentMatchIndex: Int = 0
     @Published public var shouldFocusSearchField: Bool = false
 
-    // Annotations & Sticky Notes
+    // Page Notes & Annotations
+    @Published public var pageNotes: [PageNote] = []
     @Published public var annotations: [Annotation] = []
 
     // Text selection & copy
@@ -82,6 +83,7 @@ public final class AppViewModel: ObservableObject {
         self.bookmarks = engine.getBookmarks()
         loadReadingPosition(for: url)
         loadUserBookmarks(for: url)
+        loadPageNotes(for: url)
         loadTextLayer(pageIndex: currentPageIndex)
         loadAnnotations(for: url)
         addToRecentFiles(url: url)
@@ -191,42 +193,27 @@ public final class AppViewModel: ObservableObject {
         saveBookmarksState()
     }
 
-    // MARK: - Notes & Annotations System (Relative Ratios for Zoom Lock)
-    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFF59D", relX: Double = 0.1, relY: Double = 0.1, relW: Double = 0.35, relH: Double = 0.25) {
-        let ann = Annotation(
-            pageIndex: pageIndex,
-            kind: .note,
-            x: relX,
-            y: relY,
-            width: relW,
-            height: relH,
-            colorHex: colorHex,
-            noteText: noteText
-        )
-        annotations.append(ann)
-        saveAnnotationsState()
+    // MARK: - Page-Associated Notes Management System
+    public func getPageNote(for pageIndex: Int) -> PageNote? {
+        pageNotes.first(where: { $0.pageIndex == pageIndex })
     }
 
-    public func updateAnnotationBounds(id: UUID, x: Double, y: Double, width: Double, height: Double) {
-        if let idx = annotations.firstIndex(where: { $0.id == id }) {
-            annotations[idx].x = max(0.0, min(0.9, x))
-            annotations[idx].y = max(0.0, min(0.9, y))
-            annotations[idx].width = max(0.05, width)
-            annotations[idx].height = max(0.05, height)
-            saveAnnotationsState()
+    public func addOrUpdatePageNote(pageIndex: Int, title: String = "", content: String) {
+        if let idx = pageNotes.firstIndex(where: { $0.pageIndex == pageIndex }) {
+            pageNotes[idx].title = title.isEmpty ? "Page \(pageIndex + 1) Note" : title
+            pageNotes[idx].content = content
+            pageNotes[idx].updatedAt = Date()
+        } else {
+            let note = PageNote(pageIndex: pageIndex, title: title, content: content)
+            pageNotes.append(note)
+            pageNotes.sort(by: { $0.pageIndex < $1.pageIndex })
         }
+        savePageNotesState()
     }
 
-    public func updateAnnotationNoteText(id: UUID, newText: String) {
-        if let idx = annotations.firstIndex(where: { $0.id == id }) {
-            annotations[idx].noteText = newText
-            saveAnnotationsState()
-        }
-    }
-
-    public func deleteAnnotation(_ annotation: Annotation) {
-        annotations.removeAll(where: { $0.id == annotation.id })
-        saveAnnotationsState()
+    public func deletePageNote(_ note: PageNote) {
+        pageNotes.removeAll(where: { $0.id == note.id })
+        savePageNotesState()
     }
 
     public func copySelectedTextToClipboard() {
@@ -330,6 +317,22 @@ public final class AppViewModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: key),
            let bms = try? JSONDecoder().decode([UserBookmark].self, from: data) {
             self.userBookmarks = bms
+        }
+    }
+
+    private func savePageNotesState() {
+        guard let url = documentURL else { return }
+        let key = "pnotes_" + url.path.hashValue.description
+        if let data = try? JSONEncoder().encode(pageNotes) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func loadPageNotes(for url: URL) {
+        let key = "pnotes_" + url.path.hashValue.description
+        if let data = UserDefaults.standard.data(forKey: key),
+           let notes = try? JSONDecoder().decode([PageNote].self, from: data) {
+            self.pageNotes = notes
         }
     }
 

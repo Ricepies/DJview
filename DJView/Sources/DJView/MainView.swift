@@ -114,9 +114,8 @@ public struct MainView: View {
                 // Cmd+D: Bookmark Page
                 Button(action: { viewModel.toggleBookmarkCurrentPage() }) { EmptyView() }.keyboardShortcut("d", modifiers: .command)
 
-                // Cmd+Shift+N: Add Sticky Note
+                // Cmd+Shift+N: Focus Page Note
                 Button(action: {
-                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
                     viewModel.selectedSidebarTab = .bookmarks
                 }) { EmptyView() }.keyboardShortcut("n", modifiers: [.command, .shift])
 
@@ -153,7 +152,7 @@ struct CanvasFloatingHUD: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Page Navigation Stepper (Works at any zoom level with page turn animation)
+            // Page Navigation Stepper
             HStack(spacing: 8) {
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
@@ -455,15 +454,14 @@ struct CustomToolbar: ToolbarContent {
                 }
                 .help("Bookmark Current Page (Cmd+D)")
 
-                // Top Bar: Sticky Note Creation Button
+                // Top Bar: Page Note Editor Trigger
                 Button(action: {
-                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
                     viewModel.selectedSidebarTab = .bookmarks
                 }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 15, weight: .medium))
                 }
-                .help("Add Sticky Note (Cmd+Shift+N)")
+                .help("Edit Page Note (Cmd+Shift+N)")
 
                 // Top Bar: Search Button
                 Button(action: {
