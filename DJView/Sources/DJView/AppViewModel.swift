@@ -191,15 +191,15 @@ public final class AppViewModel: ObservableObject {
         saveBookmarksState()
     }
 
-    // MARK: - Notes & Annotations System
-    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFF59D", rect: CGRect = CGRect(x: 50, y: 50, width: 240, height: 160)) {
+    // MARK: - Notes & Annotations System (Relative Ratios for Zoom Lock)
+    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFF59D", relX: Double = 0.1, relY: Double = 0.1, relW: Double = 0.35, relH: Double = 0.25) {
         let ann = Annotation(
             pageIndex: pageIndex,
             kind: .note,
-            x: rect.origin.x,
-            y: rect.origin.y,
-            width: rect.size.width,
-            height: rect.size.height,
+            x: relX,
+            y: relY,
+            width: relW,
+            height: relH,
             colorHex: colorHex,
             noteText: noteText
         )
@@ -207,10 +207,12 @@ public final class AppViewModel: ObservableObject {
         saveAnnotationsState()
     }
 
-    public func updateAnnotationPosition(id: UUID, x: Double, y: Double) {
+    public func updateAnnotationBounds(id: UUID, x: Double, y: Double, width: Double, height: Double) {
         if let idx = annotations.firstIndex(where: { $0.id == id }) {
-            annotations[idx].x = x
-            annotations[idx].y = y
+            annotations[idx].x = max(0.0, min(0.9, x))
+            annotations[idx].y = max(0.0, min(0.9, y))
+            annotations[idx].width = max(0.05, width)
+            annotations[idx].height = max(0.05, height)
             saveAnnotationsState()
         }
     }

@@ -121,7 +121,7 @@ public struct TextSelectionOverlayView: View {
     }
 }
 
-// MARK: - Interactive Freely Draggable Sticky Notes Layer
+// MARK: - Interactive Freely Draggable & Resizable Sticky Notes Layer (Top Level Z-Index)
 public struct AnnotationOverlayView: View {
     let pageIndex: Int
     let scaledSize: CGSize
@@ -137,86 +137,112 @@ public struct AnnotationOverlayView: View {
         ZStack(alignment: .topLeading) {
             let pageAnnotations = viewModel.annotations.filter { $0.pageIndex == pageIndex }
             ForEach(pageAnnotations) { ann in
-                DraggableStickyNoteView(
+                DraggableResizableStickyNoteView(
                     annotation: ann,
                     scaledSize: scaledSize,
                     viewModel: viewModel
                 )
             }
         }
+        .zIndex(999) // Always on top level!
     }
 }
 
-struct DraggableStickyNoteView: View {
+struct DraggableResizableStickyNoteView: View {
     let annotation: Annotation
     let scaledSize: CGSize
     @ObservedObject var viewModel: AppViewModel
 
     @State private var dragOffset: CGSize = .zero
+    @State private var resizeOffset: CGSize = .zero
     @State private var noteText: String = ""
-    @State private var isEditing: Bool = false
 
     var body: some View {
-        let noteWidth: CGFloat = max(220, annotation.width)
-        let noteHeight: CGFloat = max(140, annotation.height)
+        // Calculate pixel coordinates from relative ratios so zooming locked location!
+        let noteWidth = max(180, (annotation.width <= 1.0 ? annotation.width * scaledSize.width : annotation.width) + resizeOffset.width)
+        let noteHeight = max(120, (annotation.height <= 1.0 ? annotation.height * scaledSize.height : annotation.height) + resizeOffset.height)
 
-        let posX = (annotation.x + Double(dragOffset.width))
-        let posY = (annotation.y + Double(dragOffset.height))
+        let posX = (annotation.x <= 1.0 ? annotation.x * scaledSize.width : annotation.x) + dragOffset.width
+        let posY = (annotation.y <= 1.0 ? annotation.y * scaledSize.height : annotation.y) + dragOffset.height
 
-        VStack(alignment: .leading, spacing: 6) {
-            // Drag Handle Header
-            HStack {
-                Image(systemName: "hand.tap.fill")
-                    .font(.caption2)
-                    .foregroundColor(.black.opacity(0.6))
-                Text("Sticky Note")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.black)
-                Spacer()
-                Button(action: {
-                    viewModel.deleteAnnotation(annotation)
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+        ZStack(alignment: .bottomTrailing) {
+            VStack(alignment: .leading, spacing: 6) {
+                // Drag Handle Header
+                HStack {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.caption2)
                         .foregroundColor(.black.opacity(0.6))
+                    Text("Sticky Note")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.black)
+                    Spacer()
+                    Button(action: {
+                        viewModel.deleteAnnotation(annotation)
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+
+                Divider()
+                    .background(Color.black.opacity(0.25))
+
+                // Text Editor Note Body (Supports drag and editing)
+                TextEditor(text: $noteText)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.black)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .frame(maxHeight: .infinity)
+                    .onChange(of: noteText) { _, newText in
+                        viewModel.updateAnnotationNoteText(id: annotation.id, newText: newText)
+                    }
             }
-            .padding(.bottom, 2)
+            .padding(10)
+            .frame(width: noteWidth, height: noteHeight)
+            .background(Color(hex: annotation.colorHex) ?? Color(red: 1.0, green: 0.96, blue: 0.62))
+            .cornerRadius(10)
+            .shadow(color: Color.black.opacity(0.28), radius: 8, x: 0, y: 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.black.opacity(0.18), lineWidth: 1.5)
+            )
 
-            Divider()
-                .background(Color.black.opacity(0.2))
-
-            // Note Text Field
-            TextEditor(text: $noteText)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundColor(.black)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .frame(maxHeight: .infinity)
-                .onChange(of: noteText) { _, newText in
-                    viewModel.updateAnnotationNoteText(id: annotation.id, newText: newText)
-                }
+            // Side/Corner Drag Resize Handle
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.black.opacity(0.6))
+                .padding(6)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            resizeOffset = value.translation
+                        }
+                        .onEnded { value in
+                            let finalW = max(180, noteWidth) / scaledSize.width
+                            let finalH = max(120, noteHeight) / scaledSize.height
+                            let relX = posX / scaledSize.width
+                            let relY = posY / scaledSize.height
+                            viewModel.updateAnnotationBounds(id: annotation.id, x: relX, y: relY, width: finalW, height: finalH)
+                            resizeOffset = .zero
+                        }
+                )
         }
-        .padding(10)
-        .frame(width: noteWidth, height: noteHeight)
-        .background(Color(hex: annotation.colorHex) ?? Color(red: 1.0, green: 0.96, blue: 0.62))
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.black.opacity(0.15), lineWidth: 1)
-        )
-        .position(x: CGFloat(posX) + noteWidth / 2, y: CGFloat(posY) + noteHeight / 2)
+        .position(x: posX + noteWidth / 2, y: posY + noteHeight / 2)
         .gesture(
             DragGesture()
                 .onChanged { value in
                     dragOffset = value.translation
                 }
                 .onEnded { value in
-                    let finalX = annotation.x + Double(value.translation.width)
-                    let finalY = annotation.y + Double(value.translation.height)
-                    viewModel.updateAnnotationPosition(id: annotation.id, x: max(0, finalX), y: max(0, finalY))
+                    let finalX = (posX + value.translation.width) / scaledSize.width
+                    let finalY = (posY + value.translation.height) / scaledSize.height
+                    let relW = noteWidth / scaledSize.width
+                    let relH = noteHeight / scaledSize.height
+                    viewModel.updateAnnotationBounds(id: annotation.id, x: max(0, finalX), y: max(0, finalY), width: relW, height: relH)
                     dragOffset = .zero
                 }
         )
