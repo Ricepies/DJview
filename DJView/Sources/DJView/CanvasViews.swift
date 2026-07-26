@@ -101,6 +101,49 @@ struct PagePositionPreferenceKey: PreferenceKey {
     }
 }
 
+// MARK: - Event Tracking View for Trackpad Side-Swipe & Scroll Wheel Page Flipping
+struct PageScrollEventView: NSViewRepresentable {
+    let onNext: () -> Void
+    let onPrevious: () -> Void
+
+    func makeNSView(context: Context) -> EventTrackingNSView {
+        let view = EventTrackingNSView()
+        view.onNext = onNext
+        view.onPrevious = onPrevious
+        return view
+    }
+
+    func updateNSView(_ nsView: EventTrackingNSView, context: Context) {
+        nsView.onNext = onNext
+        nsView.onPrevious = onPrevious
+    }
+
+    class EventTrackingNSView: NSView {
+        var onNext: (() -> Void)?
+        var onPrevious: (() -> Void)?
+        private var lastScrollTime: Date = .distantPast
+
+        override func scrollWheel(with event: NSEvent) {
+            let now = Date()
+            guard now.timeIntervalSince(lastScrollTime) > 0.28 else { return }
+
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+
+            // Side-swipe (dx) or vertical scroll up/down (dy) threshold check
+            if dx < -2.5 || dy < -2.5 {
+                lastScrollTime = now
+                onNext?()
+            } else if dx > 2.5 || dy > 2.5 {
+                lastScrollTime = now
+                onPrevious?()
+            } else {
+                super.scrollWheel(with: event)
+            }
+        }
+    }
+}
+
 public struct SinglePageCanvasView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
@@ -110,34 +153,49 @@ public struct SinglePageCanvasView: View {
     }
 
     public var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            ZStack {
-                SinglePageContainerView(
-                    pageIndex: viewModel.currentPageIndex,
-                    viewModel: viewModel
-                )
-                .id("single_\(viewModel.currentPageIndex)")
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
+        ZStack {
+            PageScrollEventView(
+                onNext: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.nextPage()
+                    }
+                },
+                onPrevious: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.previousPage()
+                    }
+                }
+            )
+
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                ZStack {
+                    SinglePageContainerView(
+                        pageIndex: viewModel.currentPageIndex,
+                        viewModel: viewModel
+                    )
+                    .id("single_\(viewModel.currentPageIndex)")
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .gesture(
-            MagnificationGesture()
-                .onChanged { value in
-                    if baseZoomScale == 1.0 {
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        if baseZoomScale == 1.0 {
+                            baseZoomScale = viewModel.zoomScale
+                        }
+                        let updated = baseZoomScale * value
+                        viewModel.setZoomScale(updated)
+                    }
+                    .onEnded { _ in
                         baseZoomScale = viewModel.zoomScale
                     }
-                    let updated = baseZoomScale * value
-                    viewModel.setZoomScale(updated)
-                }
-                .onEnded { _ in
-                    baseZoomScale = viewModel.zoomScale
-                }
-        )
+            )
+        }
     }
 }
 
@@ -150,40 +208,55 @@ public struct MangaPageView: View {
     }
 
     public var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            HStack(spacing: 16) {
-                // Right-to-Left Manga Layout: right page is index, left page is index + 1
-                let rightIndex = viewModel.currentPageIndex
-                let leftIndex = viewModel.currentPageIndex + 1
-
-                if leftIndex < viewModel.totalPages {
-                    SinglePageContainerView(pageIndex: leftIndex, viewModel: viewModel)
-                        .id("manga_left_\(leftIndex)")
+        ZStack {
+            PageScrollEventView(
+                onNext: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.nextPage()
+                    }
+                },
+                onPrevious: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.previousPage()
+                    }
                 }
+            )
 
-                SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
-                    .id("manga_right_\(rightIndex)")
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                HStack(spacing: 16) {
+                    // Right-to-Left Manga Layout: right page is index, left page is index + 1
+                    let rightIndex = viewModel.currentPageIndex
+                    let leftIndex = viewModel.currentPageIndex + 1
+
+                    if leftIndex < viewModel.totalPages {
+                        SinglePageContainerView(pageIndex: leftIndex, viewModel: viewModel)
+                            .id("manga_left_\(leftIndex)")
+                    }
+
+                    SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
+                        .id("manga_right_\(rightIndex)")
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .transition(.asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)
-            ))
-            .padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .gesture(
-            MagnificationGesture()
-                .onChanged { value in
-                    if baseZoomScale == 1.0 {
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        if baseZoomScale == 1.0 {
+                            baseZoomScale = viewModel.zoomScale
+                        }
+                        let updated = baseZoomScale * value
+                        viewModel.setZoomScale(updated)
+                    }
+                    .onEnded { _ in
                         baseZoomScale = viewModel.zoomScale
                     }
-                    let updated = baseZoomScale * value
-                    viewModel.setZoomScale(updated)
-                }
-                .onEnded { _ in
-                    baseZoomScale = viewModel.zoomScale
-                }
-        )
+            )
+        }
     }
 }
 
