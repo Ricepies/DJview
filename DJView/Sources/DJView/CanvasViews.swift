@@ -61,7 +61,6 @@ public struct ContinuousScrollView: View {
                 isProgrammaticScroll = true
 
                 if viewModel.isDirectJump {
-                    // Direct instant jump for search & enter
                     proxy.scrollTo(targetIndex, anchor: .top)
                     isProgrammaticScroll = false
                     viewModel.targetJumpPageIndex = nil
@@ -103,10 +102,17 @@ public struct SinglePageCanvasView: View {
 
     public var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            SinglePageContainerView(
-                pageIndex: viewModel.currentPageIndex,
-                viewModel: viewModel
-            )
+            ZStack {
+                SinglePageContainerView(
+                    pageIndex: viewModel.currentPageIndex,
+                    viewModel: viewModel
+                )
+                .id("single_\(viewModel.currentPageIndex)")
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+            }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -137,15 +143,22 @@ public struct MangaPageView: View {
     public var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
             HStack(spacing: 16) {
+                // Right-to-Left Manga Layout: right page is index, left page is index + 1
                 let rightIndex = viewModel.currentPageIndex
                 let leftIndex = viewModel.currentPageIndex + 1
 
                 if leftIndex < viewModel.totalPages {
                     SinglePageContainerView(pageIndex: leftIndex, viewModel: viewModel)
+                        .id("manga_left_\(leftIndex)")
                 }
 
                 SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
+                    .id("manga_right_\(rightIndex)")
             }
+            .transition(.asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            ))
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -235,6 +248,9 @@ public struct SinglePageContainerView: View {
             let targetW = Int(CGFloat(dim.width) * CGFloat(viewModel.zoomScale))
             let targetH = Int(CGFloat(dim.height) * CGFloat(viewModel.zoomScale))
             viewModel.engine?.prefetchPages(around: pageIndex, targetWidth: targetW, targetHeight: targetH, layerMode: viewModel.layerMode)
+        }
+        .onChange(of: pageIndex) { _, _ in
+            loadPageData()
         }
         .onChange(of: viewModel.layerMode) { _, _ in
             loadPageData()

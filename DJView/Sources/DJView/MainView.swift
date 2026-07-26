@@ -43,7 +43,6 @@ public struct MainView: View {
                 }
 
                 // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
-                // Prevents tool squeezing into '>>' overflow menu when window is narrowed!
                 if viewModel.engine != nil {
                     CanvasFloatingHUD(viewModel: viewModel)
                         .padding(.bottom, 20)
@@ -73,7 +72,38 @@ public struct MainView: View {
         }
         .background(
             ZStack {
-                // Cmd+F: Activate Search & Direct Focus
+                // Page Flipping Shortcuts: Left/Right & Up/Down Arrows
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.previousPage()
+                    }
+                }) { EmptyView() }.keyboardShortcut(.leftArrow, modifiers: [])
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.nextPage()
+                    }
+                }) { EmptyView() }.keyboardShortcut(.rightArrow, modifiers: [])
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.previousPage()
+                    }
+                }) { EmptyView() }.keyboardShortcut(.upArrow, modifiers: [])
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.nextPage()
+                    }
+                }) { EmptyView() }.keyboardShortcut(.downArrow, modifiers: [])
+
+                // Zoom Shortcuts: Cmd+ / Cmd= and Cmd-
+                Button(action: { viewModel.zoomIn() }) { EmptyView() }.keyboardShortcut("=", modifiers: .command)
+                Button(action: { viewModel.zoomIn() }) { EmptyView() }.keyboardShortcut("+", modifiers: .command)
+                Button(action: { viewModel.zoomOut() }) { EmptyView() }.keyboardShortcut("-", modifiers: .command)
+                Button(action: { viewModel.setZoomScale(1.0) }) { EmptyView() }.keyboardShortcut("0", modifiers: .command)
+
+                // Cmd+F: Search & Focus
                 Button(action: {
                     viewModel.activateSearch()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -118,15 +148,18 @@ public struct MainView: View {
 }
 
 // MARK: - Floating Canvas HUD Control Pill (Bottom-Center)
-// Keeps essential reading tools directly accessible regardless of window compression!
 struct CanvasFloatingHUD: View {
     @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
         HStack(spacing: 14) {
-            // Page Navigation Stepper
+            // Page Navigation Stepper (Works at any zoom level with page turn animation)
             HStack(spacing: 8) {
-                Button(action: { viewModel.previousPage() }) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.previousPage()
+                    }
+                }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .bold))
                 }
@@ -137,7 +170,11 @@ struct CanvasFloatingHUD: View {
                     .font(.system(size: 13, weight: .semibold))
                     .monospacedDigit()
 
-                Button(action: { viewModel.nextPage() }) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        viewModel.nextPage()
+                    }
+                }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .bold))
                 }
