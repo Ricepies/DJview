@@ -583,16 +583,6 @@ struct CustomToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button(action: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    viewModel.isSidebarVisible.toggle()
-                }
-            }) {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 15, weight: .medium))
-            }
-            .help("Toggle Sidebar")
-
             Button(action: onOpenDocument) {
                 Image(systemName: "folder")
                     .font(.system(size: 15, weight: .medium))
