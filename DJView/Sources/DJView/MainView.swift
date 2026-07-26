@@ -15,41 +15,50 @@ public struct MainView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         } detail: {
-            ZStack(alignment: .bottom) {
-                ZStack(alignment: .topTrailing) {
-                    if viewModel.engine != nil {
-                        switch viewModel.layoutMode {
-                        case .continuous:
-                            ContinuousScrollView(viewModel: viewModel)
-                        case .singlePage:
-                            SinglePageCanvasView(viewModel: viewModel)
-                        case .manga:
-                            MangaPageView(viewModel: viewModel)
-                        }
-                    } else {
-                        EmptyStateView {
-                            selectAndOpenDocument()
-                        }
-                    }
-
-                    // Native macOS Preview-style Top-Right Search Bar
-                    if viewModel.isSearchPopupVisible {
-                        NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
-                            .padding(.top, 12)
-                            .padding(.trailing, 18)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .zIndex(100)
-                    }
+            VStack(spacing: 0) {
+                // Expandable Page Note Taking Drawer (Activated & Closed by Top Note Button)
+                if viewModel.isNoteTakingActive {
+                    PageNoteTopDrawer(viewModel: viewModel)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
-                if viewModel.engine != nil {
-                    CanvasFloatingHUD(viewModel: viewModel)
-                        .padding(.bottom, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(200)
+                ZStack(alignment: .bottom) {
+                    ZStack(alignment: .topTrailing) {
+                        if viewModel.engine != nil {
+                            switch viewModel.layoutMode {
+                            case .continuous:
+                                ContinuousScrollView(viewModel: viewModel)
+                            case .singlePage:
+                                SinglePageCanvasView(viewModel: viewModel)
+                            case .manga:
+                                MangaPageView(viewModel: viewModel)
+                            }
+                        } else {
+                            EmptyStateView {
+                                selectAndOpenDocument()
+                            }
+                        }
+
+                        // Native macOS Preview-style Top-Right Search Bar
+                        if viewModel.isSearchPopupVisible {
+                            NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
+                                .padding(.top, 12)
+                                .padding(.trailing, 18)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                                .zIndex(100)
+                        }
+                    }
+
+                    // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
+                    if viewModel.engine != nil {
+                        CanvasFloatingHUD(viewModel: viewModel)
+                            .padding(.bottom, 20)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .zIndex(200)
+                    }
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isNoteTakingActive)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
             .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
             .toolbar {
@@ -114,9 +123,11 @@ public struct MainView: View {
                 // Cmd+D: Bookmark Page
                 Button(action: { viewModel.toggleBookmarkCurrentPage() }) { EmptyView() }.keyboardShortcut("d", modifiers: .command)
 
-                // Cmd+Shift+N: Focus Page Note
+                // Cmd+Shift+N: Toggle Note Taking Mode
                 Button(action: {
-                    viewModel.selectedSidebarTab = .bookmarks
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.toggleNoteTaking()
+                    }
                 }) { EmptyView() }.keyboardShortcut("n", modifiers: [.command, .shift])
 
                 // Cmd+,: Open Settings
@@ -142,6 +153,104 @@ public struct MainView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openDocument(at: url)
+        }
+    }
+}
+
+// MARK: - Page Note Taking Drawer (Activated/Closed by Top Note Button)
+struct PageNoteTopDrawer: View {
+    @ObservedObject var viewModel: AppViewModel
+    @State private var noteTitle: String = ""
+    @State private var noteContent: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.accentColor)
+                    Text("Note for Page \(viewModel.currentPageIndex + 1)")
+                        .font(.system(size: 14, weight: .bold))
+
+                    Spacer()
+
+                    if let note = viewModel.getPageNote(for: viewModel.currentPageIndex), !note.content.isEmpty {
+                        Button(action: {
+                            viewModel.deletePageNote(note)
+                            noteContent = ""
+                        }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete Note")
+                    }
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.toggleNoteTaking()
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 10) {
+                    TextField("Note Title...", text: $noteTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13, weight: .medium))
+
+                    TextEditor(text: $noteContent)
+                        .font(.system(size: 13))
+                        .frame(height: 55)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+        }
+        .onAppear {
+            loadNote()
+        }
+        .onChange(of: viewModel.currentPageIndex) { _, _ in
+            loadNote()
+        }
+        .onChange(of: noteContent) { _, newContent in
+            saveNote()
+        }
+        .onChange(of: noteTitle) { _, _ in
+            saveNote()
+        }
+    }
+
+    private func loadNote() {
+        if let note = viewModel.getPageNote(for: viewModel.currentPageIndex) {
+            noteTitle = note.title
+            noteContent = note.content
+        } else {
+            noteTitle = "Page \(viewModel.currentPageIndex + 1) Note"
+            noteContent = ""
+        }
+    }
+
+    private func saveNote() {
+        if !noteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            viewModel.addOrUpdatePageNote(
+                pageIndex: viewModel.currentPageIndex,
+                title: noteTitle,
+                content: noteContent
+            )
         }
     }
 }
@@ -454,14 +563,17 @@ struct CustomToolbar: ToolbarContent {
                 }
                 .help("Bookmark Current Page (Cmd+D)")
 
-                // Top Bar: Page Note Editor Trigger
+                // Top Bar: Note Taking Activation Button (Toggles Drawer On/Off)
                 Button(action: {
-                    viewModel.selectedSidebarTab = .bookmarks
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.toggleNoteTaking()
+                    }
                 }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(viewModel.isNoteTakingActive ? .accentColor : .primary)
                 }
-                .help("Edit Page Note (Cmd+Shift+N)")
+                .help("Toggle Page Note Drawer (Cmd+Shift+N)")
 
                 // Top Bar: Search Button
                 Button(action: {

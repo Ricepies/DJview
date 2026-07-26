@@ -49,7 +49,8 @@ public final class AppViewModel: ObservableObject {
     @Published public var currentMatchIndex: Int = 0
     @Published public var shouldFocusSearchField: Bool = false
 
-    // Page Notes & Annotations
+    // Page Notes Mode & Storage
+    @Published public var isNoteTakingActive: Bool = false
     @Published public var pageNotes: [PageNote] = []
     @Published public var annotations: [Annotation] = []
 
@@ -193,7 +194,11 @@ public final class AppViewModel: ObservableObject {
         saveBookmarksState()
     }
 
-    // MARK: - Page-Associated Notes Management System
+    // MARK: - Note Taking Activation & Page Note Management
+    public func toggleNoteTaking() {
+        isNoteTakingActive.toggle()
+    }
+
     public func getPageNote(for pageIndex: Int) -> PageNote? {
         pageNotes.first(where: { $0.pageIndex == pageIndex })
     }
