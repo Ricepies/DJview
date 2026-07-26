@@ -56,6 +56,15 @@ public struct ContinuousScrollView: View {
                         baseZoomScale = viewModel.zoomScale
                     }
             )
+            .onAppear {
+                let target = viewModel.currentPageIndex
+                isProgrammaticScroll = true
+                proxy.scrollTo(target, anchor: .top)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    proxy.scrollTo(target, anchor: .top)
+                    isProgrammaticScroll = false
+                }
+            }
             .onChange(of: viewModel.targetJumpPageIndex) { _, targetIndex in
                 guard let targetIndex = targetIndex else { return }
                 isProgrammaticScroll = true
