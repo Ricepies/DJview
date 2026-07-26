@@ -15,35 +15,46 @@ public struct MainView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         } detail: {
-            ZStack(alignment: .topTrailing) {
-                if viewModel.engine != nil {
-                    switch viewModel.layoutMode {
-                    case .continuous:
-                        ContinuousScrollView(viewModel: viewModel)
-                    case .singlePage:
-                        SinglePageCanvasView(viewModel: viewModel)
-                    case .manga:
-                        MangaPageView(viewModel: viewModel)
+            ZStack(alignment: .bottom) {
+                ZStack(alignment: .topTrailing) {
+                    if viewModel.engine != nil {
+                        switch viewModel.layoutMode {
+                        case .continuous:
+                            ContinuousScrollView(viewModel: viewModel)
+                        case .singlePage:
+                            SinglePageCanvasView(viewModel: viewModel)
+                        case .manga:
+                            MangaPageView(viewModel: viewModel)
+                        }
+                    } else {
+                        EmptyStateView {
+                            selectAndOpenDocument()
+                        }
                     }
-                } else {
-                    EmptyStateView {
-                        selectAndOpenDocument()
+
+                    // Native macOS Preview-style Top-Right Search Bar
+                    if viewModel.isSearchPopupVisible {
+                        NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
+                            .padding(.top, 12)
+                            .padding(.trailing, 18)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .zIndex(100)
                     }
                 }
 
-                // Native macOS Preview-style Top-Right Search Bar
-                if viewModel.isSearchPopupVisible {
-                    NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
-                        .padding(.top, 12)
-                        .padding(.trailing, 18)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(100)
+                // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
+                // Prevents tool squeezing into '>>' overflow menu when window is narrowed!
+                if viewModel.engine != nil {
+                    CanvasFloatingHUD(viewModel: viewModel)
+                        .padding(.bottom, 20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(200)
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
             .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
             .toolbar {
-                CustomToolbar(viewModel: viewModel, onOpenDocument: selectAndOpenDocument)
+                CustomToolbar(viewModel: viewModel, onOpenDocument: selectAndOpenDocument, onOpenSettings: { isSettingsSheetPresented = true })
             }
         }
         .sheet(isPresented: $isSettingsSheetPresented) {
@@ -103,6 +114,117 @@ public struct MainView: View {
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openDocument(at: url)
         }
+    }
+}
+
+// MARK: - Floating Canvas HUD Control Pill (Bottom-Center)
+// Keeps essential reading tools directly accessible regardless of window compression!
+struct CanvasFloatingHUD: View {
+    @ObservedObject var viewModel: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Page Navigation Stepper
+            HStack(spacing: 8) {
+                Button(action: { viewModel.previousPage() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.currentPageIndex <= 0)
+
+                Text("\(viewModel.currentPageIndex + 1) / \(viewModel.totalPages)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+
+                Button(action: { viewModel.nextPage() }) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.currentPageIndex >= viewModel.totalPages - 1)
+            }
+
+            Divider()
+                .frame(height: 16)
+
+            // Zoom Controls
+            HStack(spacing: 8) {
+                Button(action: { viewModel.zoomOut() }) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(.plain)
+
+                Text("\(Int(viewModel.zoomScale * 100))%")
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .frame(width: 44)
+                    .onTapGesture {
+                        viewModel.setZoomScale(1.0)
+                    }
+
+                Button(action: { viewModel.zoomIn() }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+                .frame(height: 16)
+
+            // Layout Mode Switcher Segment
+            HStack(spacing: 6) {
+                ForEach(ViewLayoutMode.allCases) { mode in
+                    Button(action: { viewModel.layoutMode = mode }) {
+                        Image(systemName: mode.icon)
+                            .font(.system(size: 13, weight: viewModel.layoutMode == mode ? .bold : .regular))
+                            .foregroundColor(viewModel.layoutMode == mode ? .accentColor : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(mode.rawValue)
+                }
+            }
+
+            Divider()
+                .frame(height: 16)
+
+            // Visual Settings & Filters Menu
+            Menu {
+                Section("DjVu Layer Mode") {
+                    ForEach(LayerMode.allCases) { layer in
+                        Button(action: { viewModel.layerMode = layer }) {
+                            Label(layer.title, systemImage: layer.icon)
+                        }
+                    }
+                }
+                Section("Metal Color Shader") {
+                    ForEach(ColorShaderMode.allCases) { mode in
+                        Button(action: { viewModel.shaderMode = mode }) {
+                            Label(mode.rawValue, systemImage: mode.icon)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "paintpalette.fill")
+                        .font(.system(size: 13))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+            }
+            .buttonStyle(.plain)
+            .help("Layer & Color Filter Controls")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 5)
+        .overlay(
+            Capsule()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
@@ -265,6 +387,7 @@ struct EmptyStateView: View {
 struct CustomToolbar: ToolbarContent {
     @ObservedObject var viewModel: AppViewModel
     let onOpenDocument: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
@@ -283,28 +406,6 @@ struct CustomToolbar: ToolbarContent {
                     .font(.system(size: 15, weight: .medium))
             }
             .help("Open DjVu File (Cmd+O)")
-        }
-
-        ToolbarItemGroup(placement: .principal) {
-            if viewModel.totalPages > 0 {
-                HStack(spacing: 12) {
-                    Button(action: { viewModel.previousPage() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .disabled(viewModel.currentPageIndex <= 0)
-
-                    Text("\(viewModel.currentPageIndex + 1) / \(viewModel.totalPages)")
-                        .font(.system(size: 15, weight: .bold))
-                        .monospacedDigit()
-
-                    Button(action: { viewModel.nextPage() }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .disabled(viewModel.currentPageIndex >= viewModel.totalPages - 1)
-                }
-            }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -342,59 +443,12 @@ struct CustomToolbar: ToolbarContent {
                 }
                 .help("Search Document (Cmd+F)")
 
-                // Zoom Controls
-                HStack(spacing: 6) {
-                    Button(action: { viewModel.zoomOut() }) {
-                        Image(systemName: "minus.magnifyingglass")
-                            .font(.system(size: 14))
-                    }
-                    Text("\(Int(viewModel.zoomScale * 100))%")
-                        .font(.system(size: 14, weight: .semibold))
-                        .monospacedDigit()
-                    Button(action: { viewModel.zoomIn() }) {
-                        Image(systemName: "plus.magnifyingglass")
-                            .font(.system(size: 14))
-                    }
-                }
-
-                // Layout Mode Picker
-                Menu {
-                    ForEach(ViewLayoutMode.allCases) { mode in
-                        Button(action: { viewModel.layoutMode = mode }) {
-                            Label(mode.rawValue, systemImage: mode.icon)
-                        }
-                    }
-                } label: {
-                    Image(systemName: viewModel.layoutMode.icon)
+                // Settings Button
+                Button(action: onOpenSettings) {
+                    Image(systemName: "gearshape")
                         .font(.system(size: 14))
                 }
-                .help("Layout Mode")
-
-                // Layer Mode Picker
-                Menu {
-                    ForEach(LayerMode.allCases) { layer in
-                        Button(action: { viewModel.layerMode = layer }) {
-                            Label(layer.title, systemImage: layer.icon)
-                        }
-                    }
-                } label: {
-                    Image(systemName: viewModel.layerMode.icon)
-                        .font(.system(size: 14))
-                }
-                .help("DjVu Layer Mode")
-
-                // Metal Shader Color Mode Picker
-                Menu {
-                    ForEach(ColorShaderMode.allCases) { mode in
-                        Button(action: { viewModel.shaderMode = mode }) {
-                            Label(mode.rawValue, systemImage: mode.icon)
-                        }
-                    }
-                } label: {
-                    Image(systemName: viewModel.shaderMode.icon)
-                        .font(.system(size: 14))
-                }
-                .help("Color Filter Mode")
+                .help("Preferences (Cmd+,)")
 
                 // Export Page Button
                 Menu {
