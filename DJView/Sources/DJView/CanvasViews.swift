@@ -101,100 +101,90 @@ struct PagePositionPreferenceKey: PreferenceKey {
     }
 }
 
-// MARK: - Event Tracking View for Trackpad Side-Swipe & Scroll Wheel Page Flipping
-struct PageScrollEventView: NSViewRepresentable {
-    let onNext: () -> Void
-    let onPrevious: () -> Void
-
-    func makeNSView(context: Context) -> EventTrackingNSView {
-        let view = EventTrackingNSView()
-        view.onNext = onNext
-        view.onPrevious = onPrevious
-        return view
-    }
-
-    func updateNSView(_ nsView: EventTrackingNSView, context: Context) {
-        nsView.onNext = onNext
-        nsView.onPrevious = onPrevious
-    }
-
-    class EventTrackingNSView: NSView {
-        var onNext: (() -> Void)?
-        var onPrevious: (() -> Void)?
-        private var lastScrollTime: Date = .distantPast
-
-        override func scrollWheel(with event: NSEvent) {
-            let now = Date()
-            guard now.timeIntervalSince(lastScrollTime) > 0.28 else { return }
-
-            let dx = event.scrollingDeltaX
-            let dy = event.scrollingDeltaY
-
-            // Side-swipe (dx) or vertical scroll up/down (dy) threshold check
-            if dx < -2.5 || dy < -2.5 {
-                lastScrollTime = now
-                onNext?()
-            } else if dx > 2.5 || dy > 2.5 {
-                lastScrollTime = now
-                onPrevious?()
-            } else {
-                super.scrollWheel(with: event)
-            }
-        }
-    }
-}
-
 public struct SinglePageCanvasView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
+    @State private var eventMonitor: Any? = nil
+    @State private var lastScrollTime: Date = .distantPast
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
-        ZStack {
-            PageScrollEventView(
-                onNext: {
+        ScrollView([.horizontal, .vertical], showsIndicators: true) {
+            ZStack {
+                SinglePageContainerView(
+                    pageIndex: viewModel.currentPageIndex,
+                    viewModel: viewModel
+                )
+                .id("single_\(viewModel.currentPageIndex)")
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    if baseZoomScale == 1.0 {
+                        baseZoomScale = viewModel.zoomScale
+                    }
+                    let updated = baseZoomScale * value
+                    viewModel.setZoomScale(updated)
+                }
+                .onEnded { _ in
+                    baseZoomScale = viewModel.zoomScale
+                }
+        )
+        .onAppear {
+            setupTrackpadMonitor()
+        }
+        .onDisappear {
+            removeTrackpadMonitor()
+        }
+    }
+
+    private func setupTrackpadMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard viewModel.layoutMode == .singlePage else { return event }
+
+            let now = Date()
+            guard now.timeIntervalSince(lastScrollTime) > 0.30 else { return event }
+
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+
+            // Side swipe (horizontal dx) or mouse scroll wheel / trackpad (vertical dy)
+            if dx < -3.0 || dy < -3.0 {
+                lastScrollTime = now
+                DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.nextPage()
                     }
-                },
-                onPrevious: {
+                }
+                return nil
+            } else if dx > 3.0 || dy > 3.0 {
+                lastScrollTime = now
+                DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.previousPage()
                     }
                 }
-            )
-
-            ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                ZStack {
-                    SinglePageContainerView(
-                        pageIndex: viewModel.currentPageIndex,
-                        viewModel: viewModel
-                    )
-                    .id("single_\(viewModel.currentPageIndex)")
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                return nil
             }
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { value in
-                        if baseZoomScale == 1.0 {
-                            baseZoomScale = viewModel.zoomScale
-                        }
-                        let updated = baseZoomScale * value
-                        viewModel.setZoomScale(updated)
-                    }
-                    .onEnded { _ in
-                        baseZoomScale = viewModel.zoomScale
-                    }
-            )
+            return event
+        }
+    }
+
+    private func removeTrackpadMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
         }
     }
 }
@@ -202,60 +192,95 @@ public struct SinglePageCanvasView: View {
 public struct MangaPageView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
+    @State private var eventMonitor: Any? = nil
+    @State private var lastScrollTime: Date = .distantPast
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
-        ZStack {
-            PageScrollEventView(
-                onNext: {
+        ScrollView([.horizontal, .vertical], showsIndicators: true) {
+            HStack(spacing: 16) {
+                // Right-to-Left Manga Layout: right page is index, left page is index + 1
+                let rightIndex = viewModel.currentPageIndex
+                let leftIndex = viewModel.currentPageIndex + 1
+
+                if leftIndex < viewModel.totalPages {
+                    SinglePageContainerView(pageIndex: leftIndex, viewModel: viewModel)
+                        .id("manga_left_\(leftIndex)")
+                }
+
+                SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
+                    .id("manga_right_\(rightIndex)")
+            }
+            .transition(.asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            ))
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    if baseZoomScale == 1.0 {
+                        baseZoomScale = viewModel.zoomScale
+                    }
+                    let updated = baseZoomScale * value
+                    viewModel.setZoomScale(updated)
+                }
+                .onEnded { _ in
+                    baseZoomScale = viewModel.zoomScale
+                }
+        )
+        .onAppear {
+            setupTrackpadMonitor()
+        }
+        .onDisappear {
+            removeTrackpadMonitor()
+        }
+    }
+
+    private func setupTrackpadMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard viewModel.layoutMode == .manga else { return event }
+
+            let now = Date()
+            guard now.timeIntervalSince(lastScrollTime) > 0.30 else { return event }
+
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+
+            // In Manga mode (Right-to-Left):
+            // Swiping right to left (dx < -3) or scrolling down (dy < -3) -> next page
+            // Swiping left to right (dx > 3) or scrolling up (dy > 3) -> previous page
+            if dx < -3.0 || dy < -3.0 {
+                lastScrollTime = now
+                DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.nextPage()
                     }
-                },
-                onPrevious: {
+                }
+                return nil
+            } else if dx > 3.0 || dy > 3.0 {
+                lastScrollTime = now
+                DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         viewModel.previousPage()
                     }
                 }
-            )
-
-            ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                HStack(spacing: 16) {
-                    // Right-to-Left Manga Layout: right page is index, left page is index + 1
-                    let rightIndex = viewModel.currentPageIndex
-                    let leftIndex = viewModel.currentPageIndex + 1
-
-                    if leftIndex < viewModel.totalPages {
-                        SinglePageContainerView(pageIndex: leftIndex, viewModel: viewModel)
-                            .id("manga_left_\(leftIndex)")
-                    }
-
-                    SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
-                        .id("manga_right_\(rightIndex)")
-                }
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                return nil
             }
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { value in
-                        if baseZoomScale == 1.0 {
-                            baseZoomScale = viewModel.zoomScale
-                        }
-                        let updated = baseZoomScale * value
-                        viewModel.setZoomScale(updated)
-                    }
-                    .onEnded { _ in
-                        baseZoomScale = viewModel.zoomScale
-                    }
-            )
+            return event
+        }
+    }
+
+    private func removeTrackpadMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
         }
     }
 }
