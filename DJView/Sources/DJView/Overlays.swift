@@ -121,12 +121,11 @@ public struct TextSelectionOverlayView: View {
     }
 }
 
+// MARK: - Interactive Freely Draggable Sticky Notes Layer
 public struct AnnotationOverlayView: View {
     let pageIndex: Int
     let scaledSize: CGSize
     @ObservedObject var viewModel: AppViewModel
-    @State private var editingNoteId: UUID? = nil
-    @State private var editingText: String = ""
 
     public init(pageIndex: Int, scaledSize: CGSize, viewModel: AppViewModel) {
         self.pageIndex = pageIndex
@@ -138,63 +137,91 @@ public struct AnnotationOverlayView: View {
         ZStack(alignment: .topLeading) {
             let pageAnnotations = viewModel.annotations.filter { $0.pageIndex == pageIndex }
             ForEach(pageAnnotations) { ann in
-                let rect = CGRect(
-                    x: ann.x,
-                    y: ann.y,
-                    width: ann.width,
-                    height: ann.height
+                DraggableStickyNoteView(
+                    annotation: ann,
+                    scaledSize: scaledSize,
+                    viewModel: viewModel
                 )
-
-                ZStack {
-                    if ann.kind == .highlight {
-                        Rectangle()
-                            .fill(Color.yellow.opacity(0.4))
-                    } else if ann.kind == .note {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: "note.text")
-                                    .font(.caption2)
-                                    .foregroundColor(.black)
-                                Spacer()
-                                Button(action: {
-                                    viewModel.deleteAnnotation(ann)
-                                }) {
-                                    Image(systemName: "xmark")
-                                        .font(.caption2)
-                                        .foregroundColor(.black.opacity(0.6))
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            if editingNoteId == ann.id {
-                                TextField("Note...", text: $editingText, onCommit: {
-                                    viewModel.updateAnnotationNoteText(id: ann.id, newText: editingText)
-                                    editingNoteId = nil
-                                })
-                                .font(.caption)
-                                .textFieldStyle(.plain)
-                            } else {
-                                Text(ann.noteText.isEmpty ? "Double-click to edit..." : ann.noteText)
-                                    .font(.caption)
-                                    .foregroundColor(.black)
-                                    .onTapGesture(count: 2) {
-                                        editingNoteId = ann.id
-                                        editingText = ann.noteText
-                                    }
-                            }
-                        }
-                        .padding(6)
-                        .background(Color(hex: ann.colorHex) ?? Color.yellow)
-                        .cornerRadius(6)
-                        .shadow(color: Color.black.opacity(0.18), radius: 3, y: 2)
-                    } else {
-                        Rectangle()
-                            .stroke(Color.red, lineWidth: 2)
-                    }
-                }
-                .frame(width: max(80, rect.width), height: max(40, rect.height))
-                .position(x: rect.midX, y: rect.midY)
             }
+        }
+    }
+}
+
+struct DraggableStickyNoteView: View {
+    let annotation: Annotation
+    let scaledSize: CGSize
+    @ObservedObject var viewModel: AppViewModel
+
+    @State private var dragOffset: CGSize = .zero
+    @State private var noteText: String = ""
+    @State private var isEditing: Bool = false
+
+    var body: some View {
+        let noteWidth: CGFloat = max(220, annotation.width)
+        let noteHeight: CGFloat = max(140, annotation.height)
+
+        let posX = (annotation.x + Double(dragOffset.width))
+        let posY = (annotation.y + Double(dragOffset.height))
+
+        VStack(alignment: .leading, spacing: 6) {
+            // Drag Handle Header
+            HStack {
+                Image(systemName: "hand.tap.fill")
+                    .font(.caption2)
+                    .foregroundColor(.black.opacity(0.6))
+                Text("Sticky Note")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.black)
+                Spacer()
+                Button(action: {
+                    viewModel.deleteAnnotation(annotation)
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(.black.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 2)
+
+            Divider()
+                .background(Color.black.opacity(0.2))
+
+            // Note Text Field
+            TextEditor(text: $noteText)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(.black)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .frame(maxHeight: .infinity)
+                .onChange(of: noteText) { _, newText in
+                    viewModel.updateAnnotationNoteText(id: annotation.id, newText: newText)
+                }
+        }
+        .padding(10)
+        .frame(width: noteWidth, height: noteHeight)
+        .background(Color(hex: annotation.colorHex) ?? Color(red: 1.0, green: 0.96, blue: 0.62))
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.black.opacity(0.15), lineWidth: 1)
+        )
+        .position(x: CGFloat(posX) + noteWidth / 2, y: CGFloat(posY) + noteHeight / 2)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    dragOffset = value.translation
+                }
+                .onEnded { value in
+                    let finalX = annotation.x + Double(value.translation.width)
+                    let finalY = annotation.y + Double(value.translation.height)
+                    viewModel.updateAnnotationPosition(id: annotation.id, x: max(0, finalX), y: max(0, finalY))
+                    dragOffset = .zero
+                }
+        )
+        .onAppear {
+            noteText = annotation.noteText
         }
     }
 }

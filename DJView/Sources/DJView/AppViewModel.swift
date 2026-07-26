@@ -114,7 +114,6 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func setZoomScale(_ scale: Double) {
-        // Minimum zoom 0.1% (0.001) for tiny windows up to 500% (5.0)
         zoomScale = max(0.001, min(5.0, scale))
         zoomMode = .custom(zoomScale)
         saveReadingPosition()
@@ -193,7 +192,7 @@ public final class AppViewModel: ObservableObject {
     }
 
     // MARK: - Notes & Annotations System
-    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFEB3B", rect: CGRect = CGRect(x: 40, y: 40, width: 180, height: 120)) {
+    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFF59D", rect: CGRect = CGRect(x: 50, y: 50, width: 240, height: 160)) {
         let ann = Annotation(
             pageIndex: pageIndex,
             kind: .note,
@@ -206,6 +205,14 @@ public final class AppViewModel: ObservableObject {
         )
         annotations.append(ann)
         saveAnnotationsState()
+    }
+
+    public func updateAnnotationPosition(id: UUID, x: Double, y: Double) {
+        if let idx = annotations.firstIndex(where: { $0.id == id }) {
+            annotations[idx].x = x
+            annotations[idx].y = y
+            saveAnnotationsState()
+        }
     }
 
     public func updateAnnotationNoteText(id: UUID, newText: String) {
@@ -332,7 +339,7 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    private func saveAnnotationsState() {
+    public func saveAnnotationsState() {
         guard let url = documentURL else { return }
         let key = "ann_" + url.path.hashValue.description
         if let data = try? JSONEncoder().encode(annotations) {
