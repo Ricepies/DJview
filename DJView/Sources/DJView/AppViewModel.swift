@@ -114,17 +114,26 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func setZoomScale(_ scale: Double) {
-        zoomScale = max(0.2, min(5.0, scale))
+        // Minimum zoom 0.1% (0.001) for tiny windows up to 500% (5.0)
+        zoomScale = max(0.001, min(5.0, scale))
         zoomMode = .custom(zoomScale)
         saveReadingPosition()
     }
 
     public func zoomIn() {
-        setZoomScale(zoomScale + 0.15)
+        if zoomScale < 0.1 {
+            setZoomScale(zoomScale * 1.5)
+        } else {
+            setZoomScale(zoomScale + 0.15)
+        }
     }
 
     public func zoomOut() {
-        setZoomScale(zoomScale - 0.15)
+        if zoomScale <= 0.1 {
+            setZoomScale(zoomScale * 0.7)
+        } else {
+            setZoomScale(zoomScale - 0.15)
+        }
     }
 
     // MARK: - Search Activation & Instant Direct Jump
