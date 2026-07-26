@@ -6,13 +6,10 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
     public let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private var pipelineState: MTLRenderPipelineState?
+    private var samplerState: MTLSamplerState?
     private var texture: MTLTexture?
 
-    public var shaderMode: ColorShaderMode = .normal {
-        didSet {
-            updateShaderMode()
-        }
-    }
+    public var shaderMode: ColorShaderMode = .normal
 
     public init?(metalView: MTKView) {
         guard let defaultDevice = MTLCreateSystemDefaultDevice(),
@@ -21,10 +18,17 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         }
         self.device = defaultDevice
         self.commandQueue = queue
+
         metalView.device = defaultDevice
+        metalView.colorPixelFormat = .bgra8Unorm
+        metalView.framebufferOnly = true
+        metalView.enableSetNeedsDisplay = false
+        metalView.isPaused = false
+
         super.init()
         metalView.delegate = self
         setupPipeline()
+        setupSampler()
     }
 
     private func setupPipeline() {
@@ -59,8 +63,8 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
 
         fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                      texture2d<float> colorTexture [[texture(0)]],
+                                     sampler textureSampler [[sampler(0)]],
                                      constant int& mode [[buffer(0)]]) {
-            constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
             float4 color = colorTexture.sample(textureSampler, in.texCoord);
 
             if (mode == 1) {
@@ -103,11 +107,32 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func updateShaderMode() {
-        // Redraw on mode change
+    private func setupSampler() {
+        let samplerDesc = MTLSamplerDescriptor()
+        samplerDesc.minFilter = .linear
+        samplerDesc.magFilter = .linear
+        samplerDesc.sAddressMode = .clampToEdge
+        samplerDesc.tAddressMode = .clampToEdge
+        self.samplerState = device.makeSamplerState(descriptor: samplerDesc)
     }
 
     public func updateTexture(rgbaData: Data, width: Int, height: Int) {
+        guard width > 0 && height > 0 else { return }
+
+        if let tex = texture, tex.width == width && tex.height == height {
+            rgbaData.withUnsafeBytes { ptr in
+                if let baseAddress = ptr.baseAddress {
+                    tex.replace(
+                        region: MTLRegionMake2D(0, 0, width, height),
+                        mipmapLevel: 0,
+                        withBytes: baseAddress,
+                        bytesPerRow: width * 4
+                    )
+                }
+            }
+            return
+        }
+
         let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm,
             width: width,
@@ -115,6 +140,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
             mipmapped: false
         )
         textureDescriptor.usage = [.shaderRead]
+        textureDescriptor.storageMode = .shared // Apple Silicon Zero-Copy Unified Memory
 
         guard let newTexture = device.makeTexture(descriptor: textureDescriptor) else { return }
 
@@ -138,6 +164,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         guard let drawable = view.currentDrawable,
               let descriptor = view.currentRenderPassDescriptor,
               let pipelineState = pipelineState,
+              let samplerState = samplerState,
               let texture = texture,
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
@@ -146,6 +173,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(pipelineState)
         encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
 
         var modeValue: Int32 = 0
         switch shaderMode {

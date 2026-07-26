@@ -26,6 +26,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var documentURL: URL?
     @Published public var currentPageIndex: Int = 0
     @Published public var targetJumpPageIndex: Int? = nil
+    @Published public var isDirectJump: Bool = false
     @Published public var totalPages: Int = 0
     @Published public var zoomScale: Double = 1.0
     @Published public var zoomMode: ZoomMode = .fitWidth
@@ -75,6 +76,7 @@ public final class AppViewModel: ObservableObject {
         self.documentURL = url
         self.totalPages = engine.pageCount
         self.currentPageIndex = 0
+        self.isDirectJump = true
         self.targetJumpPageIndex = 0
 
         self.bookmarks = engine.getBookmarks()
@@ -84,9 +86,10 @@ public final class AppViewModel: ObservableObject {
         addToRecentFiles(url: url)
     }
 
-    public func goToPage(_ pageIndex: Int) {
+    public func goToPage(_ pageIndex: Int, animated: Bool = true) {
         guard pageIndex >= 0 && pageIndex < totalPages else { return }
         currentPageIndex = pageIndex
+        isDirectJump = !animated
         targetJumpPageIndex = pageIndex
         loadTextLayer(pageIndex: pageIndex)
         saveReadingPosition()
@@ -100,19 +103,13 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func nextPage() {
-        if layoutMode == .manga {
-            goToPage(min(totalPages - 1, currentPageIndex + 2))
-        } else {
-            goToPage(min(totalPages - 1, currentPageIndex + 1))
-        }
+        let step = (layoutMode == .manga) ? 2 : 1
+        goToPage(min(totalPages - 1, currentPageIndex + step), animated: true)
     }
 
     public func previousPage() {
-        if layoutMode == .manga {
-            goToPage(max(0, currentPageIndex - 2))
-        } else {
-            goToPage(max(0, currentPageIndex - 1))
-        }
+        let step = (layoutMode == .manga) ? 2 : 1
+        goToPage(max(0, currentPageIndex - step), animated: true)
     }
 
     public func setZoomScale(_ scale: Double) {
@@ -129,7 +126,7 @@ public final class AppViewModel: ObservableObject {
         setZoomScale(zoomScale - 0.15)
     }
 
-    // MARK: - Search Activation & Navigation (Cmd+F)
+    // MARK: - Search Activation & Instant Direct Jump
     public func activateSearch() {
         isSearchPopupVisible = true
         shouldFocusSearchField = true
@@ -143,14 +140,14 @@ public final class AppViewModel: ObservableObject {
         guard !searchResults.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % searchResults.count
         let match = searchResults[currentMatchIndex]
-        goToPage(match.page)
+        goToPage(match.page, animated: false) // Direct instant jump
     }
 
     public func previousSearchMatch() {
         guard !searchResults.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex - 1 + searchResults.count) % searchResults.count
         let match = searchResults[currentMatchIndex]
-        goToPage(match.page)
+        goToPage(match.page, animated: false) // Direct instant jump
     }
 
     public func toggleBookmarkCurrentPage() {
@@ -191,9 +188,9 @@ public final class AppViewModel: ObservableObject {
 
     private func loadTextLayer(pageIndex: Int) {
         guard let engine = engine else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             let zones = engine.getTextZones(pageIndex: pageIndex)
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.currentTextZones = zones
             }
         }
@@ -201,7 +198,7 @@ public final class AppViewModel: ObservableObject {
 
     private func setupSearchDebounce() {
         $searchQuery
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .removeDuplicates()
             .sink { [weak self] query in
                 self?.performSearch(query: query)
@@ -218,17 +215,16 @@ public final class AppViewModel: ObservableObject {
         }
 
         isSearching = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             let results = engine.searchText(query: query)
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.searchResults = results
                 self?.currentMatchIndex = 0
                 self?.isSearching = false
                 if !results.isEmpty {
-                    // Show search tab in sidebar automatically for detailed result list
                     self?.selectedSidebarTab = .search
                     if let firstMatch = results.first {
-                        self?.goToPage(firstMatch.page)
+                        self?.goToPage(firstMatch.page, animated: false) // Direct instant jump
                     }
                 }
             }
@@ -257,6 +253,7 @@ public final class AppViewModel: ObservableObject {
             let idx = max(0, min(totalPages - 1, pos.pageIndex))
             self.currentPageIndex = idx
             self.targetJumpPageIndex = idx
+            self.isDirectJump = true
             self.zoomScale = pos.zoomScale
             self.zoomMode = .custom(pos.zoomScale)
             if let layout = ViewLayoutMode(rawValue: pos.layoutMode) {

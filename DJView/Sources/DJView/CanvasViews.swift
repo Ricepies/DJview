@@ -59,12 +59,21 @@ public struct ContinuousScrollView: View {
             .onChange(of: viewModel.targetJumpPageIndex) { _, targetIndex in
                 guard let targetIndex = targetIndex else { return }
                 isProgrammaticScroll = true
-                withAnimation(.easeInOut(duration: 0.25)) {
+
+                if viewModel.isDirectJump {
+                    // Direct instant jump for search & enter
                     proxy.scrollTo(targetIndex, anchor: .top)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     isProgrammaticScroll = false
                     viewModel.targetJumpPageIndex = nil
+                    viewModel.isDirectJump = false
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        proxy.scrollTo(targetIndex, anchor: .top)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        isProgrammaticScroll = false
+                        viewModel.targetJumpPageIndex = nil
+                    }
                 }
             }
         }
@@ -222,7 +231,6 @@ public struct SinglePageContainerView: View {
         }
         .onAppear {
             loadPageData()
-            // Prefetch neighboring pages in background
             let dim = viewModel.engine?.getPageDimension(pageIndex: pageIndex) ?? (600, 800, 72)
             let targetW = Int(CGFloat(dim.width) * CGFloat(viewModel.zoomScale))
             let targetH = Int(CGFloat(dim.height) * CGFloat(viewModel.zoomScale))
