@@ -25,6 +25,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var engine: DjVuEngine?
     @Published public var documentURL: URL?
     @Published public var currentPageIndex: Int = 0
+    @Published public var targetJumpPageIndex: Int? = nil
     @Published public var totalPages: Int = 0
     @Published public var zoomScale: Double = 1.0
     @Published public var zoomMode: ZoomMode = .fitWidth
@@ -39,7 +40,8 @@ public final class AppViewModel: ObservableObject {
     @Published public var bookmarks: [BookmarkItem] = []
     @Published public var userBookmarks: Set<Int> = []
 
-    // Search
+    // Search Popup & Sidebar Results
+    @Published public var isSearchPopupVisible: Bool = false
     @Published public var searchQuery: String = ""
     @Published public var searchResults: [SearchResult] = []
     @Published public var isSearching: Bool = false
@@ -73,6 +75,7 @@ public final class AppViewModel: ObservableObject {
         self.documentURL = url
         self.totalPages = engine.pageCount
         self.currentPageIndex = 0
+        self.targetJumpPageIndex = 0
 
         self.bookmarks = engine.getBookmarks()
         loadReadingPosition(for: url)
@@ -83,6 +86,14 @@ public final class AppViewModel: ObservableObject {
 
     public func goToPage(_ pageIndex: Int) {
         guard pageIndex >= 0 && pageIndex < totalPages else { return }
+        currentPageIndex = pageIndex
+        targetJumpPageIndex = pageIndex
+        loadTextLayer(pageIndex: pageIndex)
+        saveReadingPosition()
+    }
+
+    public func setCurrentPageFromScroll(_ pageIndex: Int) {
+        guard pageIndex >= 0 && pageIndex < totalPages && pageIndex != currentPageIndex else { return }
         currentPageIndex = pageIndex
         loadTextLayer(pageIndex: pageIndex)
         saveReadingPosition()
@@ -120,9 +131,12 @@ public final class AppViewModel: ObservableObject {
 
     // MARK: - Search Activation & Navigation (Cmd+F)
     public func activateSearch() {
-        isSidebarVisible = true
-        selectedSidebarTab = .search
+        isSearchPopupVisible = true
         shouldFocusSearchField = true
+    }
+
+    public func dismissSearchPopup() {
+        isSearchPopupVisible = false
     }
 
     public func nextSearchMatch() {
@@ -210,8 +224,12 @@ public final class AppViewModel: ObservableObject {
                 self?.searchResults = results
                 self?.currentMatchIndex = 0
                 self?.isSearching = false
-                if let firstMatch = results.first {
-                    self?.goToPage(firstMatch.page)
+                if !results.isEmpty {
+                    // Show search tab in sidebar automatically for detailed result list
+                    self?.selectedSidebarTab = .search
+                    if let firstMatch = results.first {
+                        self?.goToPage(firstMatch.page)
+                    }
                 }
             }
         }
@@ -236,7 +254,9 @@ public final class AppViewModel: ObservableObject {
         let key = "pos_" + url.path.hashValue.description
         if let data = UserDefaults.standard.data(forKey: key),
            let pos = try? JSONDecoder().decode(DocumentPosition.self, from: data) {
-            self.currentPageIndex = max(0, min(totalPages - 1, pos.pageIndex))
+            let idx = max(0, min(totalPages - 1, pos.pageIndex))
+            self.currentPageIndex = idx
+            self.targetJumpPageIndex = idx
             self.zoomScale = pos.zoomScale
             self.zoomMode = .custom(pos.zoomScale)
             if let layout = ViewLayoutMode(rawValue: pos.layoutMode) {

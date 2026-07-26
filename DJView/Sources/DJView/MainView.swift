@@ -5,14 +5,16 @@ import UniformTypeIdentifiers
 public struct MainView: View {
     @StateObject var viewModel = AppViewModel()
     @State private var isTargetedForDrop = false
+    @FocusState private var isSearchFieldFocused: Bool
 
     public var body: some View {
         NavigationSplitView {
             if viewModel.isSidebarVisible {
                 SidebarView(viewModel: viewModel)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
         } detail: {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 if viewModel.engine != nil {
                     switch viewModel.layoutMode {
                     case .continuous:
@@ -27,7 +29,18 @@ public struct MainView: View {
                         selectAndOpenDocument()
                     }
                 }
+
+                // Top-Right Search Popup Overlay Prompt
+                if viewModel.isSearchPopupVisible {
+                    SearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
+                        .padding(.top, 12)
+                        .padding(.trailing, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(100)
+                }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isSearchPopupVisible)
             .toolbar {
                 CustomToolbar(viewModel: viewModel, onOpenDocument: selectAndOpenDocument)
             }
@@ -65,6 +78,83 @@ public struct MainView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openDocument(at: url)
+        }
+    }
+}
+
+// MARK: - Top-Right Search Popup Prompt
+struct SearchPopupBar: View {
+    @ObservedObject var viewModel: AppViewModel
+    var isFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.callout)
+
+            TextField("Search in document...", text: $viewModel.searchQuery)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .frame(width: 180)
+                .focused(isFocused)
+                .onSubmit {
+                    viewModel.nextSearchMatch()
+                }
+
+            if !viewModel.searchResults.isEmpty {
+                Text("\(viewModel.currentMatchIndex + 1)/\(viewModel.searchResults.count)")
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+            } else if viewModel.isSearching {
+                ProgressView()
+                    .scaleEffect(0.5)
+            }
+
+            HStack(spacing: 2) {
+                Button(action: { viewModel.previousSearchMatch() }) {
+                    Image(systemName: "chevron.up")
+                        .font(.caption2)
+                        .padding(4)
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.searchResults.isEmpty)
+
+                Button(action: { viewModel.nextSearchMatch() }) {
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .padding(4)
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.searchResults.isEmpty)
+            }
+
+            Button(action: {
+                viewModel.dismissSearchPopup()
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        )
+        .onAppear {
+            isFocused.wrappedValue = true
+        }
+        .onChange(of: viewModel.shouldFocusSearchField) { _, newValue in
+            if newValue {
+                isFocused.wrappedValue = true
+                viewModel.shouldFocusSearchField = false
+            }
         }
     }
 }
@@ -111,7 +201,11 @@ struct CustomToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button(action: { viewModel.isSidebarVisible.toggle() }) {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    viewModel.isSidebarVisible.toggle()
+                }
+            }) {
                 Image(systemName: "sidebar.left")
             }
             .help("Toggle Sidebar")
@@ -144,8 +238,16 @@ struct CustomToolbar: ToolbarContent {
 
         ToolbarItemGroup(placement: .primaryAction) {
             if viewModel.engine != nil {
-                // Search Trigger Button
-                Button(action: { viewModel.activateSearch() }) {
+                // Top-Right Search Trigger Button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if viewModel.isSearchPopupVisible {
+                            viewModel.dismissSearchPopup()
+                        } else {
+                            viewModel.activateSearch()
+                        }
+                    }
+                }) {
                     Image(systemName: "magnifyingglass")
                 }
                 .help("Search Document (Cmd+F)")

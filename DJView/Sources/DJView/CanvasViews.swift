@@ -4,6 +4,7 @@ import AppKit
 public struct ContinuousScrollView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var baseZoomScale: Double = 1.0
+    @State private var isProgrammaticScroll = false
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -19,9 +20,29 @@ public struct ContinuousScrollView: View {
                             viewModel: viewModel
                         )
                         .id(pageIndex)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: PagePositionPreferenceKey.self,
+                                    value: [PagePositionData(pageIndex: pageIndex, minY: geo.frame(in: .named("scrollContainer")).minY, height: geo.size.height)]
+                                )
+                            }
+                        )
                     }
                 }
                 .padding(.vertical, 20)
+            }
+            .coordinateSpace(name: "scrollContainer")
+            .onPreferenceChange(PagePositionPreferenceKey.self) { positions in
+                guard !isProgrammaticScroll else { return }
+                // Find page closest to top of viewport (e.g. minY <= 250)
+                if let mostVisible = positions.filter({ $0.minY <= 300 && ($0.minY + $0.height) >= 100 }).min(by: { abs($0.minY) < abs($1.minY) }) {
+                    if viewModel.currentPageIndex != mostVisible.pageIndex {
+                        DispatchQueue.main.async {
+                            viewModel.setCurrentPageFromScroll(mostVisible.pageIndex)
+                        }
+                    }
+                }
             }
             .gesture(
                 MagnificationGesture()
@@ -36,12 +57,31 @@ public struct ContinuousScrollView: View {
                         baseZoomScale = viewModel.zoomScale
                     }
             )
-            .onChange(of: viewModel.currentPageIndex) { _, newIndex in
-                withAnimation {
-                    proxy.scrollTo(newIndex, anchor: .top)
+            .onChange(of: viewModel.targetJumpPageIndex) { _, targetIndex in
+                guard let targetIndex = targetIndex else { return }
+                isProgrammaticScroll = true
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(targetIndex, anchor: .top)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isProgrammaticScroll = false
+                    viewModel.targetJumpPageIndex = nil
                 }
             }
         }
+    }
+}
+
+struct PagePositionData: Equatable {
+    let pageIndex: Int
+    let minY: CGFloat
+    let height: CGFloat
+}
+
+struct PagePositionPreferenceKey: PreferenceKey {
+    static var defaultValue: [PagePositionData] = []
+    static func reduce(value: inout [PagePositionData], nextValue: () -> [PagePositionData]) {
+        value.append(contentsOf: nextValue())
     }
 }
 
