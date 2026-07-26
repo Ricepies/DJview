@@ -45,12 +45,22 @@ public final class AppViewModel: ObservableObject {
     @Published public var targetJumpPageIndex: Int? = nil
     @Published public var isDirectJump: Bool = false
     @Published public var totalPages: Int = 0
-    @Published public var zoomScale: Double = 1.0
+    @Published public var zoomScale: Double = 1.0 {
+        didSet { saveReadingPosition() }
+    }
     @Published public var zoomMode: ZoomMode = .fitWidth
-    @Published public var layoutMode: ViewLayoutMode = .continuous
-    @Published public var layerMode: LayerMode = .composite
-    @Published public var shaderMode: ColorShaderMode = .normal
-    @Published public var selectedSidebarTab: SidebarTab = .thumbnails
+    @Published public var layoutMode: ViewLayoutMode = .continuous {
+        didSet { saveReadingPosition() }
+    }
+    @Published public var layerMode: LayerMode = .composite {
+        didSet { saveReadingPosition() }
+    }
+    @Published public var shaderMode: ColorShaderMode = .normal {
+        didSet { saveReadingPosition() }
+    }
+    @Published public var selectedSidebarTab: SidebarTab = .thumbnails {
+        didSet { saveReadingPosition() }
+    }
     @Published public var isSidebarVisible: Bool = true
     @Published public var useMetalRenderer: Bool = true
 
@@ -78,6 +88,7 @@ public final class AppViewModel: ObservableObject {
     // Recently Opened System
     @Published public var recentFiles: [URL] = []
 
+    private var isRestoringState: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
     public init() {
@@ -92,6 +103,7 @@ public final class AppViewModel: ObservableObject {
             return
         }
 
+        isRestoringState = true
         self.engine = engine
         self.documentURL = url
         self.totalPages = engine.pageCount
@@ -110,6 +122,7 @@ public final class AppViewModel: ObservableObject {
         importDjVuMetadataSidecar(for: url)
 
         addToRecentFiles(url: url)
+        isRestoringState = false
     }
 
     public func goToPage(_ pageIndex: Int, animated: Bool = true) {
@@ -350,20 +363,23 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Recently Opened System Management
+    // MARK: - Recently Opened System & Per-File Complete Settings Memory
     public func clearRecentFiles() {
         recentFiles = []
         UserDefaults.standard.removeObject(forKey: "recentFiles")
     }
 
-    private func saveReadingPosition() {
-        guard let url = documentURL else { return }
+    public func saveReadingPosition() {
+        guard !isRestoringState, let url = documentURL else { return }
         let key = "pos_" + url.path.hashValue.description
         let pos = DocumentPosition(
             pageIndex: currentPageIndex,
             scrollOffsetY: 0.0,
             zoomScale: zoomScale,
-            layoutMode: layoutMode.rawValue
+            layoutMode: layoutMode.rawValue,
+            layerMode: layerMode.rawValue,
+            shaderMode: shaderMode.rawValue,
+            selectedSidebarTab: selectedSidebarTab.rawValue
         )
         if let data = try? JSONEncoder().encode(pos) {
             UserDefaults.standard.set(data, forKey: key)
@@ -382,6 +398,15 @@ public final class AppViewModel: ObservableObject {
             self.zoomMode = .custom(pos.zoomScale)
             if let layout = ViewLayoutMode(rawValue: pos.layoutMode) {
                 self.layoutMode = layout
+            }
+            if let layer = LayerMode(rawValue: pos.layerMode) {
+                self.layerMode = layer
+            }
+            if let shader = ColorShaderMode(rawValue: pos.shaderMode) {
+                self.shaderMode = shader
+            }
+            if let tab = SidebarTab(rawValue: pos.selectedSidebarTab) {
+                self.selectedSidebarTab = tab
             }
         }
     }

@@ -6,12 +6,26 @@ public struct DocumentPosition: Codable {
     public var scrollOffsetY: Double
     public var zoomScale: Double
     public var layoutMode: String
+    public var layerMode: Int
+    public var shaderMode: String
+    public var selectedSidebarTab: String
 
-    public init(pageIndex: Int, scrollOffsetY: Double, zoomScale: Double, layoutMode: String) {
+    public init(
+        pageIndex: Int,
+        scrollOffsetY: Double = 0.0,
+        zoomScale: Double = 1.0,
+        layoutMode: String = ViewLayoutMode.continuous.rawValue,
+        layerMode: Int = LayerMode.composite.rawValue,
+        shaderMode: String = ColorShaderMode.normal.rawValue,
+        selectedSidebarTab: String = SidebarTab.thumbnails.rawValue
+    ) {
         self.pageIndex = pageIndex
         self.scrollOffsetY = scrollOffsetY
         self.zoomScale = zoomScale
         self.layoutMode = layoutMode
+        self.layerMode = layerMode
+        self.shaderMode = shaderMode
+        self.selectedSidebarTab = selectedSidebarTab
     }
 }
 
