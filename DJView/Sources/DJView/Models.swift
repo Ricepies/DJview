@@ -96,6 +96,19 @@ public struct BookmarkItem: Identifiable, Codable, Hashable {
     }
 }
 
+public struct UserBookmark: Identifiable, Codable, Hashable {
+    public var id = UUID()
+    public let pageIndex: Int
+    public var title: String
+    public let dateAdded: Date
+
+    public init(pageIndex: Int, title: String, dateAdded: Date = Date()) {
+        self.pageIndex = pageIndex
+        self.title = title
+        self.dateAdded = dateAdded
+    }
+}
+
 public struct TextZone: Identifiable, Codable {
     public var id = UUID()
     public let kind: String
@@ -143,12 +156,26 @@ public struct Annotation: Identifiable, Codable, Hashable {
     public var id = UUID()
     public let pageIndex: Int
     public let kind: AnnotationKind
-    public let x: Double
-    public let y: Double
-    public let width: Double
-    public let height: Double
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
     public var colorHex: String
     public var noteText: String
+    public let dateCreated: Date
+
+    public init(id: UUID = UUID(), pageIndex: Int, kind: AnnotationKind, x: Double, y: Double, width: Double, height: Double, colorHex: String = "#FFEB3B", noteText: String = "", dateCreated: Date = Date()) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.kind = kind
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.colorHex = colorHex
+        self.noteText = noteText
+        self.dateCreated = dateCreated
+    }
 
     public var rect: CGRect {
         CGRect(x: x, y: y, width: width, height: height)

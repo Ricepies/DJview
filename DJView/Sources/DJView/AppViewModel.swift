@@ -6,8 +6,8 @@ import Combine
 public enum SidebarTab: String, CaseIterable, Identifiable {
     case thumbnails = "Thumbnails"
     case toc = "Table of Contents"
+    case bookmarks = "Bookmarks & Notes"
     case search = "Search"
-    case annotations = "Annotations"
 
     public var id: String { rawValue }
 
@@ -15,8 +15,8 @@ public enum SidebarTab: String, CaseIterable, Identifiable {
         switch self {
         case .thumbnails: return "square.grid.2x2"
         case .toc: return "list.bullet.indent"
+        case .bookmarks: return "bookmark.fill"
         case .search: return "magnifyingglass"
-        case .annotations: return "highlighter"
         }
     }
 }
@@ -37,9 +37,9 @@ public final class AppViewModel: ObservableObject {
     @Published public var isSidebarVisible: Bool = true
     @Published public var useMetalRenderer: Bool = true
 
-    // Bookmarks & TOC
+    // NAVM Document Outline & Custom User Bookmarks
     @Published public var bookmarks: [BookmarkItem] = []
-    @Published public var userBookmarks: Set<Int> = []
+    @Published public var userBookmarks: [UserBookmark] = []
 
     // Search Popup & Sidebar Results
     @Published public var isSearchPopupVisible: Bool = false
@@ -49,7 +49,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var currentMatchIndex: Int = 0
     @Published public var shouldFocusSearchField: Bool = false
 
-    // Annotations
+    // Annotations & Sticky Notes
     @Published public var annotations: [Annotation] = []
 
     // Text selection & copy
@@ -81,6 +81,7 @@ public final class AppViewModel: ObservableObject {
 
         self.bookmarks = engine.getBookmarks()
         loadReadingPosition(for: url)
+        loadUserBookmarks(for: url)
         loadTextLayer(pageIndex: currentPageIndex)
         loadAnnotations(for: url)
         addToRecentFiles(url: url)
@@ -140,29 +141,53 @@ public final class AppViewModel: ObservableObject {
         guard !searchResults.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % searchResults.count
         let match = searchResults[currentMatchIndex]
-        goToPage(match.page, animated: false) // Direct instant jump
+        goToPage(match.page, animated: false)
     }
 
     public func previousSearchMatch() {
         guard !searchResults.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex - 1 + searchResults.count) % searchResults.count
         let match = searchResults[currentMatchIndex]
-        goToPage(match.page, animated: false) // Direct instant jump
+        goToPage(match.page, animated: false)
+    }
+
+    // MARK: - User Bookmarks System
+    public func isPageBookmarked(_ pageIndex: Int) -> Bool {
+        userBookmarks.contains(where: { $0.pageIndex == pageIndex })
     }
 
     public func toggleBookmarkCurrentPage() {
-        if userBookmarks.contains(currentPageIndex) {
-            userBookmarks.remove(currentPageIndex)
+        if let idx = userBookmarks.firstIndex(where: { $0.pageIndex == currentPageIndex }) {
+            userBookmarks.remove(at: idx)
         } else {
-            userBookmarks.insert(currentPageIndex)
+            let bm = UserBookmark(pageIndex: currentPageIndex, title: "Page \(currentPageIndex + 1)")
+            userBookmarks.append(bm)
+            userBookmarks.sort(by: { $0.pageIndex < $1.pageIndex })
         }
         saveBookmarksState()
     }
 
-    public func addAnnotation(kind: AnnotationKind, rect: CGRect, colorHex: String = "#FFEB3B", noteText: String = "") {
+    public func addBookmark(pageIndex: Int, title: String) {
+        if let idx = userBookmarks.firstIndex(where: { $0.pageIndex == pageIndex }) {
+            userBookmarks[idx].title = title
+        } else {
+            let bm = UserBookmark(pageIndex: pageIndex, title: title)
+            userBookmarks.append(bm)
+            userBookmarks.sort(by: { $0.pageIndex < $1.pageIndex })
+        }
+        saveBookmarksState()
+    }
+
+    public func deleteBookmark(_ bookmark: UserBookmark) {
+        userBookmarks.removeAll(where: { $0.id == bookmark.id })
+        saveBookmarksState()
+    }
+
+    // MARK: - Notes & Annotations System
+    public func addStickyNote(pageIndex: Int, noteText: String, colorHex: String = "#FFEB3B", rect: CGRect = CGRect(x: 40, y: 40, width: 180, height: 120)) {
         let ann = Annotation(
-            pageIndex: currentPageIndex,
-            kind: kind,
+            pageIndex: pageIndex,
+            kind: .note,
             x: rect.origin.x,
             y: rect.origin.y,
             width: rect.size.width,
@@ -171,6 +196,18 @@ public final class AppViewModel: ObservableObject {
             noteText: noteText
         )
         annotations.append(ann)
+        saveAnnotationsState()
+    }
+
+    public func updateAnnotationNoteText(id: UUID, newText: String) {
+        if let idx = annotations.firstIndex(where: { $0.id == id }) {
+            annotations[idx].noteText = newText
+            saveAnnotationsState()
+        }
+    }
+
+    public func deleteAnnotation(_ annotation: Annotation) {
+        annotations.removeAll(where: { $0.id == annotation.id })
         saveAnnotationsState()
     }
 
@@ -224,7 +261,7 @@ public final class AppViewModel: ObservableObject {
                 if !results.isEmpty {
                     self?.selectedSidebarTab = .search
                     if let firstMatch = results.first {
-                        self?.goToPage(firstMatch.page, animated: false) // Direct instant jump
+                        self?.goToPage(firstMatch.page, animated: false)
                     }
                 }
             }
@@ -264,9 +301,18 @@ public final class AppViewModel: ObservableObject {
 
     private func saveBookmarksState() {
         guard let url = documentURL else { return }
-        let key = "bm_" + url.path.hashValue.description
-        let arr = Array(userBookmarks)
-        UserDefaults.standard.set(arr, forKey: key)
+        let key = "ubm_" + url.path.hashValue.description
+        if let data = try? JSONEncoder().encode(userBookmarks) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func loadUserBookmarks(for url: URL) {
+        let key = "ubm_" + url.path.hashValue.description
+        if let data = UserDefaults.standard.data(forKey: key),
+           let bms = try? JSONDecoder().decode([UserBookmark].self, from: data) {
+            self.userBookmarks = bms
+        }
     }
 
     private func loadAnnotations(for url: URL) {

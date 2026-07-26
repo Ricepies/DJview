@@ -355,8 +355,8 @@ struct CustomToolbar: ToolbarContent {
 
                 // Bookmark Toggle Button
                 Button(action: { viewModel.toggleBookmarkCurrentPage() }) {
-                    Image(systemName: viewModel.userBookmarks.contains(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
-                        .foregroundColor(viewModel.userBookmarks.contains(viewModel.currentPageIndex) ? .red : .primary)
+                    Image(systemName: viewModel.isPageBookmarked(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
+                        .foregroundColor(viewModel.isPageBookmarked(viewModel.currentPageIndex) ? .red : .primary)
                 }
                 .help("Bookmark Current Page (Cmd+D)")
 

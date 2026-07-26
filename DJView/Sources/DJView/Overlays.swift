@@ -125,6 +125,8 @@ public struct AnnotationOverlayView: View {
     let pageIndex: Int
     let scaledSize: CGSize
     @ObservedObject var viewModel: AppViewModel
+    @State private var editingNoteId: UUID? = nil
+    @State private var editingText: String = ""
 
     public init(pageIndex: Int, scaledSize: CGSize, viewModel: AppViewModel) {
         self.pageIndex = pageIndex
@@ -137,10 +139,10 @@ public struct AnnotationOverlayView: View {
             let pageAnnotations = viewModel.annotations.filter { $0.pageIndex == pageIndex }
             ForEach(pageAnnotations) { ann in
                 let rect = CGRect(
-                    x: ann.x * scaledSize.width,
-                    y: ann.y * scaledSize.height,
-                    width: ann.width * scaledSize.width,
-                    height: ann.height * scaledSize.height
+                    x: ann.x,
+                    y: ann.y,
+                    width: ann.width,
+                    height: ann.height
                 )
 
                 ZStack {
@@ -148,27 +150,67 @@ public struct AnnotationOverlayView: View {
                         Rectangle()
                             .fill(Color.yellow.opacity(0.4))
                     } else if ann.kind == .note {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Image(systemName: "note.text")
                                     .font(.caption2)
-                                Text(ann.noteText)
-                                    .font(.caption2)
-                                    .lineLimit(2)
+                                    .foregroundColor(.black)
+                                Spacer()
+                                Button(action: {
+                                    viewModel.deleteAnnotation(ann)
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.caption2)
+                                        .foregroundColor(.black.opacity(0.6))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(4)
-                            .background(Color.yellow)
-                            .cornerRadius(4)
-                            .shadow(radius: 2)
+
+                            if editingNoteId == ann.id {
+                                TextField("Note...", text: $editingText, onCommit: {
+                                    viewModel.updateAnnotationNoteText(id: ann.id, newText: editingText)
+                                    editingNoteId = nil
+                                })
+                                .font(.caption)
+                                .textFieldStyle(.plain)
+                            } else {
+                                Text(ann.noteText.isEmpty ? "Double-click to edit..." : ann.noteText)
+                                    .font(.caption)
+                                    .foregroundColor(.black)
+                                    .onTapGesture(count: 2) {
+                                        editingNoteId = ann.id
+                                        editingText = ann.noteText
+                                    }
+                            }
                         }
+                        .padding(6)
+                        .background(Color(hex: ann.colorHex) ?? Color.yellow)
+                        .cornerRadius(6)
+                        .shadow(color: Color.black.opacity(0.18), radius: 3, y: 2)
                     } else {
                         Rectangle()
                             .stroke(Color.red, lineWidth: 2)
                     }
                 }
-                .frame(width: max(20, rect.width), height: max(20, rect.height))
+                .frame(width: max(80, rect.width), height: max(40, rect.height))
                 .position(x: rect.midX, y: rect.midY)
             }
         }
+    }
+}
+
+extension Color {
+    init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+
+        var rgb: UInt64 = 0
+        guard Scanner(string: hexSanitized).scanHexInt64(&rgb) else { return nil }
+
+        let r = Double((rgb & 0xFF0000) >> 16) / 255.0
+        let g = Double((rgb & 0x00FF00) >> 8) / 255.0
+        let b = Double(rgb & 0x0000FF) / 255.0
+
+        self.init(red: r, green: g, blue: b)
     }
 }

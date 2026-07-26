@@ -10,8 +10,8 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // macOS Preview style compact tab bar
-            Picker("Sidebar View", selection: $viewModel.selectedSidebarTab) {
+            // macOS HIG Standard Segmented Sidebar Header
+            Picker("Sidebar Section", selection: $viewModel.selectedSidebarTab) {
                 ForEach(SidebarTab.allCases) { tab in
                     Image(systemName: tab.icon)
                         .tag(tab)
@@ -19,61 +19,72 @@ public struct SidebarView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
 
             Divider()
 
-            switch viewModel.selectedSidebarTab {
-            case .thumbnails:
-                ThumbnailsView(viewModel: viewModel)
-            case .toc:
-                TOCView(viewModel: viewModel)
-            case .search:
-                SearchSidebarView(viewModel: viewModel)
-            case .annotations:
-                AnnotationsSidebarView(viewModel: viewModel)
+            Group {
+                switch viewModel.selectedSidebarTab {
+                case .thumbnails:
+                    ThumbnailsView(viewModel: viewModel)
+                case .toc:
+                    TOCView(viewModel: viewModel)
+                case .bookmarks:
+                    BookmarksAndNotesView(viewModel: viewModel)
+                case .search:
+                    SearchSidebarView(viewModel: viewModel)
+                }
             }
         }
-        .frame(minWidth: 160, idealWidth: 220, maxWidth: 350)
+        .background(.ultraThinMaterial)
+        .frame(minWidth: 180, idealWidth: 230, maxWidth: 360)
     }
 }
 
-// MARK: - Thumbnails View with Dynamic Layout Resizing
+// MARK: - Thumbnails View with Apple HIG Layout
 struct ThumbnailsView: View {
     @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
         GeometryReader { geo in
             let availableWidth = max(100, geo.size.width - 24)
-            // Calculate dynamic cell width & height to fit container width
-            let targetCellWidth = min(availableWidth, max(90, availableWidth / floor(max(1, availableWidth / 110))))
-            let cellHeight = targetCellWidth * 1.3
-            let columns = [GridItem(.adaptive(minimum: targetCellWidth, maximum: targetCellWidth), spacing: 8)]
+            let cellWidth = min(availableWidth, max(95, availableWidth / floor(max(1, availableWidth / 115))))
+            let cellHeight = cellWidth * 1.32
+            let columns = [GridItem(.adaptive(minimum: cellWidth, maximum: cellWidth), spacing: 10)]
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(0..<viewModel.totalPages, id: \.self) { pageIndex in
                             ThumbnailCell(
                                 pageIndex: pageIndex,
-                                width: targetCellWidth,
+                                width: cellWidth,
                                 height: cellHeight,
                                 isSelected: viewModel.currentPageIndex == pageIndex,
-                                isBookmarked: viewModel.userBookmarks.contains(pageIndex),
+                                isBookmarked: viewModel.isPageBookmarked(pageIndex),
                                 engine: viewModel.engine,
                                 layerMode: viewModel.layerMode
                             )
                             .id(pageIndex)
                             .onTapGesture {
-                                viewModel.goToPage(pageIndex)
+                                viewModel.goToPage(pageIndex, animated: false)
+                            }
+                            .contextMenu {
+                                Button(viewModel.isPageBookmarked(pageIndex) ? "Remove Bookmark" : "Add Bookmark") {
+                                    viewModel.currentPageIndex = pageIndex
+                                    viewModel.toggleBookmarkCurrentPage()
+                                }
+                                Button("Add Note Here...") {
+                                    viewModel.addStickyNote(pageIndex: pageIndex, noteText: "Note on page \(pageIndex + 1)")
+                                }
                             }
                         }
                     }
-                    .padding(8)
+                    .padding(10)
                 }
                 .onChange(of: viewModel.currentPageIndex) { _, newIndex in
-                    withAnimation {
+                    withAnimation(.easeInOut(duration: 0.18)) {
                         proxy.scrollTo(newIndex, anchor: .center)
                     }
                 }
@@ -94,7 +105,7 @@ struct ThumbnailCell: View {
     @State private var image: NSImage? = nil
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             ZStack(alignment: .topTrailing) {
                 Group {
                     if let img = image {
@@ -103,24 +114,24 @@ struct ThumbnailCell: View {
                             .aspectRatio(contentMode: .fit)
                     } else {
                         Rectangle()
-                            .fill(Color(NSColor.windowBackgroundColor))
+                            .fill(Color(NSColor.controlBackgroundColor))
                             .overlay(ProgressView().scaleEffect(0.6))
                     }
                 }
                 .frame(width: width, height: height)
-                .cornerRadius(5)
-                .shadow(color: isSelected ? Color.accentColor.opacity(0.5) : Color.black.opacity(0.12), radius: isSelected ? 4 : 2)
+                .cornerRadius(6)
+                .shadow(color: isSelected ? Color.accentColor.opacity(0.4) : Color.black.opacity(0.14), radius: isSelected ? 5 : 2, y: 1)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5)
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2.5 : 1)
                 )
 
                 if isBookmarked {
                     Image(systemName: "bookmark.fill")
                         .font(.caption2)
                         .foregroundColor(.red)
-                        .padding(3)
-                        .shadow(radius: 1.5)
+                        .padding(4)
+                        .shadow(radius: 1)
                 }
             }
 
@@ -164,24 +175,25 @@ struct TOCView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(viewModel.bookmarks, children: \.children) { item in
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Image(systemName: "doc.text")
-                            .font(.caption)
+                            .font(.system(size: 11))
                             .foregroundColor(.accentColor)
                         Text(item.title)
-                            .font(.callout)
+                            .font(.system(size: 12))
                             .lineLimit(1)
                         Spacer()
                         if let page = item.pageNum {
                             Text("\(page)")
-                                .font(.caption2)
+                                .font(.system(size: 10, weight: .regular))
+                                .monospacedDigit()
                                 .foregroundColor(.secondary)
                         }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if let page = item.pageNum, page >= 1 {
-                            viewModel.goToPage(page - 1)
+                            viewModel.goToPage(page - 1, animated: false)
                         }
                     }
                 }
@@ -191,7 +203,142 @@ struct TOCView: View {
     }
 }
 
-// MARK: - Search Sidebar View with Cmd+F Search Controls
+// MARK: - Unified Bookmarks & Notes System View (Apple HIG Compliant)
+struct BookmarksAndNotesView: View {
+    @ObservedObject var viewModel: AppViewModel
+    @State private var editingNoteId: UUID? = nil
+    @State private var editingNoteText: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Action Header
+            HStack {
+                Text("Bookmarks & Notes")
+                    .font(.caption)
+                    .bold()
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button(action: {
+                    viewModel.toggleBookmarkCurrentPage()
+                }) {
+                    Label("Bookmark Page", systemImage: viewModel.isPageBookmarked(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+
+                Button(action: {
+                    viewModel.addStickyNote(pageIndex: viewModel.currentPageIndex, noteText: "Note on page \(viewModel.currentPageIndex + 1)")
+                }) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Add Sticky Note")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            List {
+                // Section 1: User Bookmarks
+                Section(header: Text("BOOKMARKS (\(viewModel.userBookmarks.count))").font(.caption2).foregroundColor(.secondary)) {
+                    if viewModel.userBookmarks.isEmpty {
+                        Text("No bookmarks added")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(viewModel.userBookmarks) { bm in
+                            HStack(spacing: 8) {
+                                Image(systemName: "bookmark.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                                Text(bm.title)
+                                    .font(.system(size: 12))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("P. \(bm.pageIndex + 1)")
+                                    .font(.caption2)
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                viewModel.goToPage(bm.pageIndex, animated: false)
+                            }
+                            .contextMenu {
+                                Button("Delete Bookmark", role: .destructive) {
+                                    viewModel.deleteBookmark(bm)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section 2: Sticky Notes & Highlights
+                Section(header: Text("STICKY NOTES & HIGHLIGHTS (\(viewModel.annotations.count))").font(.caption2).foregroundColor(.secondary)) {
+                    if viewModel.annotations.isEmpty {
+                        Text("No notes or highlights added")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(viewModel.annotations) { ann in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: ann.kind == .highlight ? "highlighter" : "note.text")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.accentColor)
+                                    Text("\(ann.kind.rawValue) (P. \(ann.pageIndex + 1))")
+                                        .font(.caption)
+                                        .bold()
+                                    Spacer()
+                                }
+
+                                if editingNoteId == ann.id {
+                                    HStack {
+                                        TextField("Edit note...", text: $editingNoteText, onCommit: {
+                                            viewModel.updateAnnotationNoteText(id: ann.id, newText: editingNoteText)
+                                            editingNoteId = nil
+                                        })
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.caption)
+
+                                        Button("Done") {
+                                            viewModel.updateAnnotationNoteText(id: ann.id, newText: editingNoteText)
+                                            editingNoteId = nil
+                                        }
+                                        .font(.caption2)
+                                    }
+                                } else if !ann.noteText.isEmpty {
+                                    Text(ann.noteText)
+                                        .font(.caption)
+                                        .foregroundColor(.primary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                viewModel.goToPage(ann.pageIndex, animated: false)
+                            }
+                            .contextMenu {
+                                Button("Edit Note...") {
+                                    editingNoteId = ann.id
+                                    editingNoteText = ann.noteText
+                                }
+                                Button("Delete Note", role: .destructive) {
+                                    viewModel.deleteAnnotation(ann)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+        }
+    }
+}
+
+// MARK: - Search Sidebar View
 struct SearchSidebarView: View {
     @ObservedObject var viewModel: AppViewModel
     @FocusState private var isSearchFocused: Bool
@@ -287,82 +434,7 @@ struct SearchSidebarView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         viewModel.currentMatchIndex = idx
-                        viewModel.goToPage(result.page)
-                    }
-                }
-                .listStyle(.sidebar)
-            }
-        }
-        .onAppear {
-            if viewModel.shouldFocusSearchField {
-                isSearchFocused = true
-                viewModel.shouldFocusSearchField = false
-            }
-        }
-        .onChange(of: viewModel.shouldFocusSearchField) { _, newValue in
-            if newValue {
-                isSearchFocused = true
-                viewModel.shouldFocusSearchField = false
-            }
-        }
-    }
-}
-
-// MARK: - Annotations Sidebar View
-struct AnnotationsSidebarView: View {
-    @ObservedObject var viewModel: AppViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Annotations")
-                    .font(.subheadline)
-                    .bold()
-                Spacer()
-                Button(action: {
-                    viewModel.addAnnotation(kind: .note, rect: CGRect(x: 50, y: 50, width: 150, height: 100), noteText: "New note")
-                }) {
-                    Image(systemName: "plus")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(8)
-
-            Divider()
-
-            if viewModel.annotations.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    Text("No annotations yet")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(viewModel.annotations) { ann in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: ann.kind == .highlight ? "highlighter" : "note.text")
-                                    .font(.caption2)
-                                    .foregroundColor(.accentColor)
-                                Text("\(ann.kind.rawValue) (P. \(ann.pageIndex + 1))")
-                                    .font(.caption2)
-                                    .bold()
-                            }
-                            if !ann.noteText.isEmpty {
-                                Text(ann.noteText)
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            viewModel.goToPage(ann.pageIndex)
-                        }
+                        viewModel.goToPage(result.page, animated: false)
                     }
                 }
                 .listStyle(.sidebar)
