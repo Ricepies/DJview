@@ -35,7 +35,6 @@ public struct ContinuousScrollView: View {
             .coordinateSpace(name: "scrollContainer")
             .onPreferenceChange(PagePositionPreferenceKey.self) { positions in
                 guard !isProgrammaticScroll else { return }
-                // Find page closest to top of viewport (e.g. minY <= 250)
                 if let mostVisible = positions.filter({ $0.minY <= 300 && ($0.minY + $0.height) >= 100 }).min(by: { abs($0.minY) < abs($1.minY) }) {
                     if viewModel.currentPageIndex != mostVisible.pageIndex {
                         DispatchQueue.main.async {
@@ -223,6 +222,11 @@ public struct SinglePageContainerView: View {
         }
         .onAppear {
             loadPageData()
+            // Prefetch neighboring pages in background
+            let dim = viewModel.engine?.getPageDimension(pageIndex: pageIndex) ?? (600, 800, 72)
+            let targetW = Int(CGFloat(dim.width) * CGFloat(viewModel.zoomScale))
+            let targetH = Int(CGFloat(dim.height) * CGFloat(viewModel.zoomScale))
+            viewModel.engine?.prefetchPages(around: pageIndex, targetWidth: targetW, targetHeight: targetH, layerMode: viewModel.layerMode)
         }
         .onChange(of: viewModel.layerMode) { _, _ in
             loadPageData()

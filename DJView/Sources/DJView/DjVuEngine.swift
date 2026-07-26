@@ -6,6 +6,10 @@ public final class DjVuEngine: @unchecked Sendable {
     private var ctx: OpaquePointer?
     private let queue = DispatchQueue(label: "org.djview.engine", qos: .userInitiated, attributes: .concurrent)
 
+    // Memory-managed LRU cache for rendered RGBA buffers and NSImages
+    private let rawBufferCache = NSCache<NSString, NSData>()
+    private let imageCache = NSCache<NSString, NSImage>()
+
     public let filePath: String
 
     public init?(filePath: String) {
@@ -13,6 +17,10 @@ public final class DjVuEngine: @unchecked Sendable {
         let ptr = djvu_doc_open(filePath)
         guard let validPtr = ptr else { return nil }
         self.ctx = validPtr
+
+        // Limit memory footprint: max 40 page renders in RAM (~160MB for typical 1080p pages)
+        rawBufferCache.countLimit = 40
+        imageCache.countLimit = 40
     }
 
     deinit {
@@ -37,6 +45,13 @@ public final class DjVuEngine: @unchecked Sendable {
     }
 
     public func renderPage(pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite, completion: @escaping (NSImage?) -> Void) {
+        let cacheKey = "\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)" as NSString
+
+        if let cachedImg = imageCache.object(forKey: cacheKey) {
+            completion(cachedImg)
+            return
+        }
+
         queue.async { [weak self] in
             guard let self = self, let ctx = self.ctx else {
                 completion(nil)
@@ -87,6 +102,8 @@ public final class DjVuEngine: @unchecked Sendable {
             }
 
             let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+            self.imageCache.setObject(nsImage, forKey: cacheKey)
+
             DispatchQueue.main.async {
                 completion(nsImage)
             }
@@ -94,15 +111,21 @@ public final class DjVuEngine: @unchecked Sendable {
     }
 
     public func renderPageRawRGBA(pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite, completion: @escaping (Data?, Int, Int) -> Void) {
+        let (dw, dh, _) = self.getPageDimension(pageIndex: pageIndex) ?? (300, 400, 72)
+        let w = targetWidth > 0 ? targetWidth : dw
+        let h = targetHeight > 0 ? targetHeight : dh
+        let cacheKey = "\(pageIndex)_\(w)_\(h)_\(layerMode.rawValue)" as NSString
+
+        if let cachedData = rawBufferCache.object(forKey: cacheKey) {
+            completion(cachedData as Data, w, h)
+            return
+        }
+
         queue.async { [weak self] in
             guard let self = self, let ctx = self.ctx else {
                 completion(nil, 0, 0)
                 return
             }
-
-            let (dw, dh, _) = self.getPageDimension(pageIndex: pageIndex) ?? (300, 400, 72)
-            let w = targetWidth > 0 ? targetWidth : dw
-            let h = targetHeight > 0 ? targetHeight : dh
 
             let byteCount = w * h * 4
             var buffer = [UInt8](repeating: 0, count: byteCount)
@@ -118,8 +141,27 @@ public final class DjVuEngine: @unchecked Sendable {
             }
 
             let data = Data(buffer)
+            self.rawBufferCache.setObject(data as NSData, forKey: cacheKey)
+
             DispatchQueue.main.async {
                 completion(data, w, h)
+            }
+        }
+    }
+
+    // Prefetch adjacent pages in background for ultra-smooth fast scrolling
+    public func prefetchPages(around pageIndex: Int, targetWidth: Int, targetHeight: Int, layerMode: LayerMode = .composite) {
+        let count = pageCount
+        let range = max(0, pageIndex - 2)...min(count - 1, pageIndex + 2)
+
+        for p in range where p != pageIndex {
+            let (dw, dh, _) = getPageDimension(pageIndex: p) ?? (300, 400, 72)
+            let w = targetWidth > 0 ? targetWidth : dw
+            let h = targetHeight > 0 ? targetHeight : dh
+            let cacheKey = "\(p)_\(w)_\(h)_\(layerMode.rawValue)" as NSString
+
+            if rawBufferCache.object(forKey: cacheKey) == nil {
+                renderPageRawRGBA(pageIndex: p, targetWidth: w, targetHeight: h, layerMode: layerMode) { _, _, _ in }
             }
         }
     }

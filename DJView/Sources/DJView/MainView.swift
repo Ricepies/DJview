@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 public struct MainView: View {
     @StateObject var viewModel = AppViewModel()
     @State private var isTargetedForDrop = false
+    @State private var isSettingsSheetPresented = false
     @FocusState private var isSearchFieldFocused: Bool
 
     public var body: some View {
@@ -30,20 +31,23 @@ public struct MainView: View {
                     }
                 }
 
-                // Top-Right Search Popup Overlay Prompt
+                // Native macOS Preview-style Top-Right Search Bar
                 if viewModel.isSearchPopupVisible {
-                    SearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
-                        .padding(.top, 12)
+                    NativeSearchPopupBar(viewModel: viewModel, isFocused: $isSearchFieldFocused)
+                        .padding(.top, 10)
                         .padding(.trailing, 16)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(100)
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
-            .animation(.easeInOut(duration: 0.2), value: viewModel.isSearchPopupVisible)
+            .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
             .toolbar {
                 CustomToolbar(viewModel: viewModel, onOpenDocument: selectAndOpenDocument)
             }
+        }
+        .sheet(isPresented: $isSettingsSheetPresented) {
+            SettingsView(viewModel: viewModel)
         }
         .onDrop(of: [.fileURL], isTargeted: $isTargetedForDrop) { providers in
             guard let provider = providers.first else { return false }
@@ -57,12 +61,23 @@ public struct MainView: View {
             return true
         }
         .background(
-            Button(action: {
-                viewModel.activateSearch()
-            }) {
-                EmptyView()
+            ZStack {
+                // Cmd+F: Activate Search & Direct Focus
+                Button(action: {
+                    viewModel.activateSearch()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        isSearchFieldFocused = true
+                    }
+                }) { EmptyView() }.keyboardShortcut("f", modifiers: .command)
+
+                // Cmd+,: Open Settings
+                Button(action: { isSettingsSheetPresented = true }) { EmptyView() }.keyboardShortcut(",", modifiers: .command)
+
+                // Cmd+1/2/3: Layout Mode Switchers
+                Button(action: { viewModel.layoutMode = .continuous }) { EmptyView() }.keyboardShortcut("1", modifiers: .command)
+                Button(action: { viewModel.layoutMode = .singlePage }) { EmptyView() }.keyboardShortcut("2", modifiers: .command)
+                Button(action: { viewModel.layoutMode = .manga }) { EmptyView() }.keyboardShortcut("3", modifiers: .command)
             }
-            .keyboardShortcut("f", modifiers: .command)
             .opacity(0)
         )
     }
@@ -82,51 +97,53 @@ public struct MainView: View {
     }
 }
 
-// MARK: - Top-Right Search Popup Prompt
-struct SearchPopupBar: View {
+// MARK: - Native Preview-style Search Bar with Direct Cursor Focus
+struct NativeSearchPopupBar: View {
     @ObservedObject var viewModel: AppViewModel
     var isFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
-                .font(.callout)
+                .font(.system(size: 13, weight: .medium))
 
-            TextField("Search in document...", text: $viewModel.searchQuery)
+            TextField("Search", text: $viewModel.searchQuery)
                 .textFieldStyle(.plain)
-                .font(.callout)
-                .frame(width: 180)
+                .font(.system(size: 13))
+                .frame(width: 170)
                 .focused(isFocused)
                 .onSubmit {
                     viewModel.nextSearchMatch()
                 }
 
             if !viewModel.searchResults.isEmpty {
-                Text("\(viewModel.currentMatchIndex + 1)/\(viewModel.searchResults.count)")
-                    .font(.caption2)
+                Text("\(viewModel.currentMatchIndex + 1) of \(viewModel.searchResults.count)")
+                    .font(.system(size: 11, weight: .regular))
                     .monospacedDigit()
                     .foregroundColor(.secondary)
             } else if viewModel.isSearching {
                 ProgressView()
                     .scaleEffect(0.5)
+                    .frame(width: 14, height: 14)
             }
+
+            Divider()
+                .frame(height: 14)
 
             HStack(spacing: 2) {
                 Button(action: { viewModel.previousSearchMatch() }) {
-                    Image(systemName: "chevron.up")
-                        .font(.caption2)
-                        .padding(4)
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(viewModel.searchResults.isEmpty)
 
                 Button(action: { viewModel.nextSearchMatch() }) {
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .padding(4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(viewModel.searchResults.isEmpty)
             }
 
@@ -134,18 +151,18 @@ struct SearchPopupBar: View {
                 viewModel.dismissSearchPopup()
             }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.callout)
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
         .onAppear {
             isFocused.wrappedValue = true
@@ -156,6 +173,41 @@ struct SearchPopupBar: View {
                 viewModel.shouldFocusSearchField = false
             }
         }
+    }
+}
+
+// MARK: - Settings Sheet
+struct SettingsView: View {
+    @ObservedObject var viewModel: AppViewModel
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("DJView Preferences")
+                .font(.headline)
+
+            Form {
+                Toggle("Use Metal GPU Renderer", isOn: $viewModel.useMetalRenderer)
+                Picker("Default Layout Mode", selection: $viewModel.layoutMode) {
+                    ForEach(ViewLayoutMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                Picker("Default Layer", selection: $viewModel.layerMode) {
+                    ForEach(LayerMode.allCases) { layer in
+                        Text(layer.title).tag(layer)
+                    }
+                }
+            }
+            .padding()
+
+            Button("Done") {
+                dismiss()
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding()
+        .frame(width: 380, height: 220)
     }
 }
 
@@ -213,7 +265,7 @@ struct CustomToolbar: ToolbarContent {
             Button(action: onOpenDocument) {
                 Image(systemName: "folder")
             }
-            .help("Open DjVu File")
+            .help("Open DjVu File (Cmd+O)")
         }
 
         ToolbarItemGroup(placement: .principal) {
@@ -240,7 +292,7 @@ struct CustomToolbar: ToolbarContent {
             if viewModel.engine != nil {
                 // Top-Right Search Trigger Button
                 Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
                         if viewModel.isSearchPopupVisible {
                             viewModel.dismissSearchPopup()
                         } else {
@@ -306,7 +358,7 @@ struct CustomToolbar: ToolbarContent {
                     Image(systemName: viewModel.userBookmarks.contains(viewModel.currentPageIndex) ? "bookmark.fill" : "bookmark")
                         .foregroundColor(viewModel.userBookmarks.contains(viewModel.currentPageIndex) ? .red : .primary)
                 }
-                .help("Bookmark Current Page")
+                .help("Bookmark Current Page (Cmd+D)")
 
                 // Export Page Button
                 Menu {
