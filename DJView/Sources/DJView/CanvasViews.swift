@@ -120,10 +120,17 @@ public struct SinglePageCanvasView: View {
                     viewModel: viewModel
                 )
                 .id("single_\(viewModel.currentPageIndex)")
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
+                .transition(
+                    viewModel.pageTurnDirection == .forward
+                    ? .asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                      )
+                    : .asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .move(edge: .trailing).combined(with: .opacity)
+                      )
+                )
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -154,7 +161,6 @@ public struct SinglePageCanvasView: View {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard viewModel.layoutMode == .singlePage else { return event }
 
-            // Ignore momentum/inertia events from trackpad deceleration
             if event.momentumPhase != [] {
                 return nil
             }
@@ -233,10 +239,17 @@ public struct MangaPageView: View {
                 SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
                     .id("manga_right_\(rightIndex)")
             }
-            .transition(.asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)
-            ))
+            .transition(
+                viewModel.pageTurnDirection == .forward
+                ? .asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                  )
+                : .asymmetric(
+                    insertion: .move(edge: .leading).combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                  )
+            )
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -266,7 +279,6 @@ public struct MangaPageView: View {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard viewModel.layoutMode == .manga else { return event }
 
-            // Ignore momentum/inertia events from trackpad deceleration
             if event.momentumPhase != [] {
                 return nil
             }
