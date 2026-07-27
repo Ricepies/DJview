@@ -25,7 +25,9 @@ mkdir -p "$RESOURCES_DIR"
 cp "$PROJECT_ROOT/DJView/.build/release/DJView" "$MACOS_DIR/DJView"
 chmod +x "$MACOS_DIR/DJView"
 
-if [ -f "$PROJECT_ROOT/aaa.icns" ]; then
+if [ -f "$PROJECT_ROOT/ccc.icns" ]; then
+    cp "$PROJECT_ROOT/ccc.icns" "$RESOURCES_DIR/AppIcon.icns"
+elif [ -f "$PROJECT_ROOT/aaa.icns" ]; then
     cp "$PROJECT_ROOT/aaa.icns" "$RESOURCES_DIR/AppIcon.icns"
 fi
 
