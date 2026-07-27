@@ -36,3 +36,10 @@ DerivedData/
 # ===== Misc =====
 *.log
 .env
+
+# ===== Internal / Scratch files =====
+HANDOVER.md
+TODO.md
+Screenshot-*.png
+ccc.png
+
