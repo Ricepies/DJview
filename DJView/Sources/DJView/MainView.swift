@@ -181,39 +181,48 @@ public struct MainView: View {
     }
 }
 
-// MARK: - Intuitive & Structured Document Conversion Modal Sheet
+// MARK: - Refined & Compact Document Conversion Popup (Zero Overflow)
 struct DocumentConversionSheet: View {
     @ObservedObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedFormat: ExportDocumentFormat = .pdf
-    @State private var rangeOption: Int = 0 // 0 = All, 1 = Current Page, 2 = Custom
+    @State private var rangeOption: Int = 0 // 0 = All, 1 = Current Page, 2 = Custom Range
     @State private var customStartPage: Int = 1
     @State private var customEndPage: Int = 1
     @State private var qualityScale: Double = 1.5
 
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 12) {
+        VStack(spacing: 16) {
+            // Header Bar
+            HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.2.circlepath.doc.on.clipboard")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.accentColor)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Document Conversion & Export")
-                        .font(.title2)
+                    Text("Convert Document")
+                        .font(.headline)
                         .bold()
-                    Text("Convert DjVu to PDF, EPUB, CBZ, TIFF, or PNG Series")
-                        .font(.subheadline)
+                    Text("Export DjVu pages to PDF, EPUB, CBZ, TIFF, or PNG")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
                 Spacer()
+
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
             }
 
             Divider()
 
             if viewModel.isExporting {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     ProgressView(value: viewModel.exportProgress)
                         .progressViewStyle(.linear)
 
@@ -221,52 +230,92 @@ struct DocumentConversionSheet: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
                 }
-                .padding(.vertical, 30)
+                .padding(.vertical, 24)
             } else {
-                Form {
-                    Section("Target Format") {
-                        Picker("Convert To", selection: $selectedFormat) {
+                VStack(spacing: 14) {
+                    // Format Cards Selector
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Export Format")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                             ForEach(ExportDocumentFormat.allCases) { fmt in
-                                Label(fmt.rawValue, systemImage: fmt.icon)
-                                    .tag(fmt)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-
-                    Section("Page Range") {
-                        Picker("Pages", selection: $rangeOption) {
-                            Text("All Pages (1 – \(viewModel.totalPages))").tag(0)
-                            Text("Current Page Only (\(viewModel.currentPageIndex + 1))").tag(1)
-                            Text("Custom Range").tag(2)
-                        }
-                        .pickerStyle(.radioGroup)
-
-                        if rangeOption == 2 {
-                            HStack {
-                                Text("From Page:")
-                                TextField("Start", value: $customStartPage, formatter: NumberFormatter())
-                                    .frame(width: 60)
-                                    .textFieldStyle(.roundedBorder)
-
-                                Text("To Page:")
-                                TextField("End", value: $customEndPage, formatter: NumberFormatter())
-                                    .frame(width: 60)
-                                    .textFieldStyle(.roundedBorder)
+                                Button(action: { selectedFormat = fmt }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: fmt.icon)
+                                            .font(.system(size: 14))
+                                            .foregroundColor(selectedFormat == fmt ? .accentColor : .primary)
+                                        Text(fmt.id.components(separatedBy: " (").first ?? fmt.rawValue)
+                                            .font(.system(size: 12, weight: selectedFormat == fmt ? .semibold : .regular))
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(selectedFormat == fmt ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(selectedFormat == fmt ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
 
-                    Section("Image Resolution / Quality") {
-                        Picker("Resolution Scale", selection: $qualityScale) {
-                            Text("1.0x Standard (Fast)").tag(1.0)
-                            Text("1.5x Crisp (Recommended)").tag(1.5)
-                            Text("2.0x High Retina").tag(2.0)
+                    // Page Range Selection
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Page Range")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 12) {
+                            Picker("", selection: $rangeOption) {
+                                Text("All (\(viewModel.totalPages))").tag(0)
+                                Text("Page \(viewModel.currentPageIndex + 1)").tag(1)
+                                Text("Custom").tag(2)
+                            }
+                            .pickerStyle(.segmented)
+                            .controlSize(.small)
+
+                            if rangeOption == 2 {
+                                HStack(spacing: 4) {
+                                    TextField("1", value: $customStartPage, formatter: NumberFormatter())
+                                        .frame(width: 44)
+                                        .textFieldStyle(.roundedBorder)
+                                        .controlSize(.small)
+                                    Text("–")
+                                        .font(.caption)
+                                    TextField("\(viewModel.totalPages)", value: $customEndPage, formatter: NumberFormatter())
+                                        .frame(width: 44)
+                                        .textFieldStyle(.roundedBorder)
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
+                    }
+
+                    // Quality / Resolution Scale
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Image Resolution")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        Picker("", selection: $qualityScale) {
+                            Text("1.0x Standard").tag(1.0)
+                            Text("1.5x Crisp").tag(1.5)
+                            Text("2.0x Retina").tag(2.0)
                         }
                         .pickerStyle(.segmented)
+                        .controlSize(.small)
                     }
                 }
 
+                Divider()
+
+                // Bottom Action Footer
                 HStack {
                     Button("Cancel") {
                         dismiss()
@@ -275,16 +324,17 @@ struct DocumentConversionSheet: View {
 
                     Spacer()
 
-                    Button("Export & Convert...") {
-                        triggerExportPanel()
+                    Button(action: triggerExportPanel) {
+                        Label("Convert & Export...", systemImage: "arrow.up.forward.app")
+                            .font(.system(size: 13, weight: .medium))
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .controlSize(.regular)
                 }
             }
         }
-        .padding(24)
-        .frame(width: 480)
+        .padding(18)
+        .frame(width: 460)
         .onAppear {
             customStartPage = 1
             customEndPage = max(1, viewModel.totalPages)
