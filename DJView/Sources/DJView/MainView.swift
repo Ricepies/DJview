@@ -13,12 +13,16 @@ public struct MainView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
+            // Fixed-width sidebar panel — slides in/out via frame width, never reflows toolbar
             if viewModel.isSidebarVisible {
                 SidebarView(viewModel: viewModel)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .frame(width: 220)
+                    .transition(.move(edge: .leading))
+
+                Divider()
             }
-        } detail: {
+
             VStack(spacing: 0) {
                 // PDF2DjVu Conversion Status Bar (Full Top Banner)
                 if viewModel.isPDFConverting && !viewModel.isPDFConversionMinimized {
@@ -73,8 +77,6 @@ public struct MainView: View {
                         }
                     }
 
-
-
                     // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
                     if viewModel.engine != nil {
                         CanvasFloatingHUD(viewModel: viewModel)
@@ -87,16 +89,17 @@ public struct MainView: View {
             .animation(.easeInOut(duration: 0.2), value: viewModel.isNoteTakingActive)
             .animation(.easeInOut(duration: 0.2), value: viewModel.isPDFConverting)
             .animation(.easeInOut(duration: 0.2), value: viewModel.isPDFConversionMinimized)
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
             .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
-            .toolbar {
-                CustomToolbar(
-                    viewModel: viewModel,
-                    onOpenDocument: selectAndOpenDocument,
-                    onOpenSettings: { isSettingsSheetPresented = true },
-                    onOpenExportModal: { viewModel.isExportModalPresented = true }
-                )
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.isSidebarVisible)
+        .toolbar {
+            CustomToolbar(
+                viewModel: viewModel,
+                onOpenDocument: selectAndOpenDocument,
+                onOpenSettings: { isSettingsSheetPresented = true },
+                onOpenExportModal: { viewModel.isExportModalPresented = true }
+            )
         }
         .sheet(isPresented: $isSettingsSheetPresented) {
             SettingsView(viewModel: viewModel)

@@ -18,8 +18,6 @@ struct DJViewApp: App {
         .windowStyle(.automatic)
         .windowToolbarStyle(.unified)
         .commands {
-            SidebarCommands()
-
             CommandGroup(replacing: .newItem) {
                 Button("Open…") {
                     openWithPanel()
