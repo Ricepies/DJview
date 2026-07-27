@@ -183,20 +183,7 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -1,
     };
 
-    // 1. Enforce min 1024px render floor so IW44 wavelets do not hit octave downsample truncation
-    let (req_w, req_h) = if target_width > 0 && target_height > 0 {
-        let min_dim: f32 = 1024.0;
-        let max_req = (target_width as f32).max(target_height as f32);
-        if max_req < min_dim {
-            let mult = min_dim / max_req;
-            ((target_width as f32 * mult) as u32, (target_height as f32 * mult) as u32)
-        } else {
-            (target_width, target_height)
-        }
-    } else {
-        (0, 0)
-    };
-
+    // Render page at native 100% resolution to bypass djvu-rs's broken render_to_size downsampler on JB2/IW44 pages
     let pixmap_res = match layer_mode {
         3 => {
             if let Ok(Some(bitmap)) = page.decode_mask() {
@@ -214,21 +201,16 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
                         data[idx + 3] = 255;
                     }
                 }
-                let pm = djvu_rs::Pixmap {
+                Ok(djvu_rs::Pixmap {
                     width: bw,
                     height: bh,
                     data,
-                };
-                if req_w > 0 && req_h > 0 && (bw != req_w || bh != req_h) {
-                    page.render_to_size(req_w, req_h)
-                } else {
-                    Ok(pm)
-                }
+                })
             } else {
-                page.render_to_size(req_w, req_h)
+                page.render()
             }
         }
-        _ => page.render_to_size(req_w, req_h),
+        _ => page.render(),
     };
 
     let pixmap = match pixmap_res {
@@ -236,7 +218,7 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -2,
     };
 
-    // 2. Resample in Rust memory if we forced a larger render size for the IW44 floor
+    // Resample native 100% render in Rust memory using imageops::resize if target dimensions are requested
     let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || pixmap.height != target_height) {
         let (pw, ph) = (pixmap.width, pixmap.height);
         if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
