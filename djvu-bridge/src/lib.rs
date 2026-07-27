@@ -382,22 +382,27 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
         data: slice.to_vec(),
     };
 
-    let encoder = PageEncoder::from_pixmap(&pixmap)
+    let single_page_djvu = match PageEncoder::from_pixmap(&pixmap)
         .with_dpi(if dpi == 0 { 300 } else { dpi })
-        .with_quality(EncodeQuality::Photo);
+        .with_quality(EncodeQuality::Quality)
+        .encode() {
+            Ok(bytes) => bytes,
+            Err(_) => match PageEncoder::from_pixmap(&pixmap)
+                .with_dpi(if dpi == 0 { 300 } else { dpi })
+                .with_quality(EncodeQuality::Photo)
+                .encode() {
+                    Ok(bytes) => bytes,
+                    Err(_) => return -2,
+                },
+        };
 
-    let djvu_bytes = match encoder.encode() {
-        Ok(b) => b,
-        Err(_) => return -2,
-    };
-
-    match std::fs::write(path_str, djvu_bytes) {
+    match std::fs::write(path_str, single_page_djvu) {
         Ok(_) => 0,
         Err(_) => -3,
     }
 }
 
-// MARK: - Streaming Multi-Page DjVu Encoder Engine with djvm::merge & Photo IW44 Encoding
+// MARK: - Multi-Layered Quality Encoder Engine with Photo Fallback & djvm::merge
 #[no_mangle]
 pub unsafe extern "C" fn djvu_encoder_create(dpi: u16) -> *mut DjVuMultiPageEncoder {
     Box::into_raw(Box::new(DjVuMultiPageEncoder {
@@ -431,14 +436,19 @@ pub unsafe extern "C" fn djvu_encoder_add_png_page(
         data: rgba_img.into_raw(),
     };
 
-    let enc = PageEncoder::from_pixmap(&pixmap)
+    let single_page_djvu = match PageEncoder::from_pixmap(&pixmap)
         .with_dpi((*encoder).dpi)
-        .with_quality(EncodeQuality::Photo);
-
-    let single_page_djvu = match enc.encode() {
-        Ok(bytes) => bytes,
-        Err(_) => return -3,
-    };
+        .with_quality(EncodeQuality::Quality)
+        .encode() {
+            Ok(bytes) => bytes,
+            Err(_) => match PageEncoder::from_pixmap(&pixmap)
+                .with_dpi((*encoder).dpi)
+                .with_quality(EncodeQuality::Photo)
+                .encode() {
+                    Ok(bytes) => bytes,
+                    Err(_) => return -3,
+                },
+        };
 
     (*encoder).page_bytes.push(single_page_djvu);
     0
