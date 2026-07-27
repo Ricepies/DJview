@@ -622,17 +622,13 @@ public final class AppViewModel: ObservableObject {
             self.exportStatusText = "Finalizing PDF File..."
         }
 
-        let success = pdfDoc.write(to: targetURL)
+        _ = pdfDoc.write(to: targetURL)
 
         DispatchQueue.main.async {
             self.isExporting = false
             self.isPDFConverting = false
             self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
-            if success {
-                NSSound.beep()
-                NSWorkspace.shared.activateFileViewerSelecting([targetURL])
-            }
         }
     }
 
@@ -670,8 +666,9 @@ public final class AppViewModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.isExporting = false
+            self.isPDFConverting = false
+            self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
-            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
         }
     }
 
@@ -780,8 +777,9 @@ public final class AppViewModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.isExporting = false
+            self.isPDFConverting = false
+            self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
-            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
         }
     }
 
@@ -842,8 +840,9 @@ public final class AppViewModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.isExporting = false
+            self.isPDFConverting = false
+            self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
-            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
         }
     }
 
@@ -867,8 +866,9 @@ public final class AppViewModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.isExporting = false
+            self.isPDFConverting = false
+            self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
-            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
         }
     }
 
