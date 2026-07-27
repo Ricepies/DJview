@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import Combine
+import CDjVuBridge
 
 public enum SidebarTab: String, CaseIterable, Identifiable {
     case thumbnails = "Thumbnails"
@@ -334,8 +335,56 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
+    // MARK: - High-Fidelity Cocoa PNG / JPEG Export
     public func exportCurrentPage(format: Int, targetURL: URL) -> Bool {
         guard let engine = engine else { return false }
+        let dim = engine.getPageDimension(pageIndex: currentPageIndex) ?? (600, 800, 72)
+        let dw = dim.width
+        let dh = dim.height
+
+        let byteCount = dw * dh * 4
+        var buffer = [UInt8](repeating: 0, count: byteCount)
+
+        let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
+            guard let base = ptr.baseAddress else { return -1 }
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(currentPageIndex), UInt32(dw), UInt32(dh), UInt32(layerMode.rawValue), base)
+        }
+
+        if res == 0 {
+            let data = Data(buffer)
+            if let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: dw,
+                pixelsHigh: dh,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .calibratedRGB,
+                bytesPerRow: dw * 4,
+                bitsPerPixel: 32
+            ) {
+                data.withUnsafeBytes { rawBuffer in
+                    if let base = rawBuffer.baseAddress, let bitmapData = rep.bitmapData {
+                        memcpy(bitmapData, base, byteCount)
+                    }
+                }
+
+                let fileType: NSBitmapImageRep.FileType = (format == 0) ? .png : .jpeg
+                let props: [NSBitmapImageRep.PropertyKey: Any] = (format == 1) ? [.compressionFactor: 0.9] : [:]
+
+                if let outputData = rep.representation(using: fileType, properties: props) {
+                    do {
+                        try outputData.write(to: targetURL, options: .atomic)
+                        print("Successfully exported page \(currentPageIndex + 1) to \(targetURL.path) (\(outputData.count) bytes)")
+                        return true
+                    } catch {
+                        print("Error writing exported image to \(targetURL.path): \(error)")
+                    }
+                }
+            }
+        }
+
         return engine.exportPage(pageIndex: currentPageIndex, format: format, outputPath: targetURL.path)
     }
 

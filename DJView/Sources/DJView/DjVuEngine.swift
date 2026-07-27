@@ -4,7 +4,7 @@ import CoreGraphics
 import CDjVuBridge
 
 public final class DjVuEngine {
-    private let docPtr: OpaquePointer
+    public let docPtr: OpaquePointer
     private let pageCache = NSCache<NSString, NSImage>()
     private let rawDataCache = NSCache<NSString, NSData>()
 
