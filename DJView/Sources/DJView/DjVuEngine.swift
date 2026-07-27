@@ -113,7 +113,7 @@ public final class DjVuEngine {
     public let docPtr: OpaquePointer
     private let pageCache = LRUCache<String, NSImage>(capacity: 20)
     private let rawDataCache = LRUCache<String, Data>(capacity: 20)
-    private let renderQueue = DispatchQueue(label: "com.djview.renderQueue", qos: .userInitiated)
+    private let renderQueue = DispatchQueue(label: "org.deja.renderQueue", qos: .userInitiated)
 
     public var pageCount: Int {
         Int(djvu_doc_page_count(docPtr))

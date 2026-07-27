@@ -922,7 +922,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("DJView Preferences")
+            Text("Deja Preferences")
                 .font(.title3)
                 .bold()
 
@@ -971,7 +971,7 @@ struct EmptyStateView: View {
                 .foregroundColor(.accentColor)
 
             VStack(spacing: 6) {
-                Text("DJView Reader")
+                Text("Deja")
                     .font(.largeTitle)
                     .bold()
                 Text("High-performance native macOS DjVu viewer with Metal acceleration")
