@@ -414,6 +414,7 @@ public struct SinglePageContainerView: View {
     @State private var rawData: Data? = nil
     @State private var renderWidth: Int = 0
     @State private var renderHeight: Int = 0
+    @State private var zoomDebounceItem: DispatchWorkItem? = nil
 
     public init(pageIndex: Int, viewModel: AppViewModel) {
         self.pageIndex = pageIndex
@@ -484,7 +485,13 @@ public struct SinglePageContainerView: View {
             loadPageData()
         }
         .onChange(of: viewModel.zoomScale) { _, _ in
-            loadPageData()
+            zoomDebounceItem?.cancel()
+            let item = DispatchWorkItem { [weak viewModel] in
+                guard viewModel != nil else { return }
+                loadPageData()
+            }
+            zoomDebounceItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
         }
     }
 

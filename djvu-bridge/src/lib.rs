@@ -9,6 +9,9 @@ use djvu_rs::djvu_encode::{PageEncoder, EncodeQuality};
 
 pub struct DjVuDocContext {
     doc: Document,
+    cached_page_idx: Option<u32>,
+    cached_layer_mode: Option<u32>,
+    cached_pixmap: Option<djvu_rs::Pixmap>,
 }
 
 fn generate_temp_id() -> String {
@@ -117,7 +120,12 @@ pub unsafe extern "C" fn djvu_doc_open(path: *const c_char) -> *mut DjVuDocConte
         },
     };
 
-    Box::into_raw(Box::new(DjVuDocContext { doc }))
+    Box::into_raw(Box::new(DjVuDocContext {
+        doc,
+        cached_page_idx: None,
+        cached_layer_mode: None,
+        cached_pixmap: None,
+    }))
 }
 
 #[no_mangle]
@@ -179,43 +187,58 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
     }
 
     let unwind_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let page = match (*ctx).doc.page(page_idx as usize) {
-            Ok(p) => p,
-            Err(_) => return -1,
-        };
+        let ctx_ref = &mut *ctx;
 
-        let pixmap_res = match layer_mode {
-            3 => {
-                if let Ok(Some(bitmap)) = page.decode_mask() {
-                    let bw = bitmap.width;
-                    let bh = bitmap.height;
-                    let mut data = vec![0u8; (bw * bh * 4) as usize];
-                    for y in 0..bh {
-                        for x in 0..bw {
-                            let bit = bitmap.get(x, y);
-                            let val = if bit { 0u8 } else { 255u8 };
-                            let idx = ((y * bw + x) * 4) as usize;
-                            data[idx] = val;
-                            data[idx + 1] = val;
-                            data[idx + 2] = val;
-                            data[idx + 3] = 255;
+        // Check if native pixmap for page_idx + layer_mode is already cached in DjVuDocContext
+        let pixmap = if ctx_ref.cached_page_idx == Some(page_idx)
+            && ctx_ref.cached_layer_mode == Some(layer_mode)
+            && ctx_ref.cached_pixmap.is_some()
+        {
+            ctx_ref.cached_pixmap.clone().unwrap()
+        } else {
+            let page = match ctx_ref.doc.page(page_idx as usize) {
+                Ok(p) => p,
+                Err(_) => return -1,
+            };
+
+            let pixmap_res = match layer_mode {
+                3 => {
+                    if let Ok(Some(bitmap)) = page.decode_mask() {
+                        let bw = bitmap.width;
+                        let bh = bitmap.height;
+                        let mut data = vec![0u8; (bw * bh * 4) as usize];
+                        for y in 0..bh {
+                            for x in 0..bw {
+                                let bit = bitmap.get(x, y);
+                                let val = if bit { 0u8 } else { 255u8 };
+                                let idx = ((y * bw + x) * 4) as usize;
+                                data[idx] = val;
+                                data[idx + 1] = val;
+                                data[idx + 2] = val;
+                                data[idx + 3] = 255;
+                            }
                         }
+                        Ok(djvu_rs::Pixmap {
+                            width: bw,
+                            height: bh,
+                            data,
+                        })
+                    } else {
+                        page.render()
                     }
-                    Ok(djvu_rs::Pixmap {
-                        width: bw,
-                        height: bh,
-                        data,
-                    })
-                } else {
-                    page.render()
                 }
-            }
-            _ => page.render(),
-        };
+                _ => page.render(),
+            };
 
-        let pixmap = match pixmap_res {
-            Ok(pm) => pm,
-            Err(_) => return -2,
+            let pm = match pixmap_res {
+                Ok(pm) => pm,
+                Err(_) => return -2,
+            };
+
+            ctx_ref.cached_page_idx = Some(page_idx);
+            ctx_ref.cached_layer_mode = Some(layer_mode);
+            ctx_ref.cached_pixmap = Some(pm.clone());
+            pm
         };
 
         let actual_ph = if pixmap.width > 0 {
@@ -256,10 +279,7 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
 
     match unwind_res {
         Ok(code) => code,
-        Err(_) => {
-            eprintln!("[RUST FFI CATCH] Caught panic in djvu_doc_render_page_rgba!");
-            -999
-        }
+        Err(_) => -999,
     }
 }
 
