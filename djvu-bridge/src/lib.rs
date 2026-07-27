@@ -9,6 +9,12 @@ pub struct DjVuDocContext {
     doc: Document,
 }
 
+fn generate_temp_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    format!("{:x}", nanos)
+}
+
 #[derive(Serialize)]
 struct BookmarkNode {
     title: String,
@@ -397,6 +403,192 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
         Ok(_) => 0,
         Err(_) => -3,
     }
+}
+
+// MARK: - Production-Grade Directory / Image Stream DjVu Encoder Pipeline
+#[no_mangle]
+pub unsafe extern "C" fn djvu_convert_dir_to_djvu(
+    dir_path: *const c_char,
+    out_path: *const c_char,
+    quality_mode: u32, // 0 = Lossless (B&W Manga JB2), 1 = Quality (Mixed), 2 = Photo
+    dpi: u16,
+) -> i32 {
+    if dir_path.is_null() || out_path.is_null() {
+        return -1;
+    }
+
+    let dir_str = match CStr::from_ptr(dir_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let out_str = match CStr::from_ptr(out_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let mut image_paths: Vec<std::path::PathBuf> = Vec::new();
+    let entries = match std::fs::read_dir(dir_str) {
+        Ok(e) => e,
+        Err(_) => return -2,
+    };
+
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_file() {
+            if let Some(ext) = p.extension() {
+                let ext_str = ext.to_string_lossy().to_lowercase();
+                if ext_str == "png" || ext_str == "jpg" || ext_str == "jpeg" || ext_str == "pnm" || ext_str == "tif" || ext_str == "tiff" {
+                    image_paths.push(p);
+                }
+            }
+        }
+    }
+
+    if image_paths.is_empty() {
+        return -3;
+    }
+
+    image_paths.sort();
+
+    let target_dpi = if dpi == 0 { 300 } else { dpi };
+    let temp_dir = std::env::temp_dir().join(format!("djvu_chunks_{}", generate_temp_id()));
+    if std::fs::create_dir_all(&temp_dir).is_err() {
+        return -4;
+    }
+
+    let mut encoded_single_pages: Vec<std::path::PathBuf> = Vec::new();
+
+    for (idx, img_p) in image_paths.iter().enumerate() {
+        let dynamic_img = match image::open(img_p) {
+            Ok(img) => img,
+            Err(_) => continue,
+        };
+
+        let rgba_img = dynamic_img.to_rgba8();
+        let (w, h) = rgba_img.dimensions();
+
+        let pixmap = djvu_rs::Pixmap {
+            width: w,
+            height: h,
+            data: rgba_img.into_raw(),
+        };
+
+        let quality = match quality_mode {
+            0 => EncodeQuality::Lossless, // Clean B&W Manga Line Art -> Shared JB2
+            1 => djvu_rs::djvu_encode::classify_content(&pixmap),
+            2 => EncodeQuality::Photo,
+            _ => EncodeQuality::Lossless,
+        };
+
+        let enc_res = PageEncoder::from_pixmap(&pixmap)
+            .with_dpi(target_dpi)
+            .with_quality(quality)
+            .encode();
+
+        let single_page_bytes = match enc_res {
+            Ok(b) => b,
+            Err(_) => match PageEncoder::from_pixmap(&pixmap)
+                .with_dpi(target_dpi)
+                .with_quality(EncodeQuality::Photo)
+                .encode() {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                },
+        };
+
+        let chunk_path = temp_dir.join(format!("page_{:05}.djvu", idx + 1));
+        if std::fs::write(&chunk_path, &single_page_bytes).is_ok() {
+            encoded_single_pages.push(chunk_path);
+        }
+    }
+
+    if encoded_single_pages.is_empty() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return -5;
+    }
+
+    let mut page_buffers = Vec::with_capacity(encoded_single_pages.len());
+    for p_path in &encoded_single_pages {
+        if let Ok(b) = std::fs::read(p_path) {
+            page_buffers.push(b);
+        }
+    }
+
+    let page_refs: Vec<&[u8]> = page_buffers.iter().map(|v| v.as_slice()).collect();
+
+    let merged_djvu = match djvu_rs::djvm::merge(&page_refs) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return -6;
+        }
+    };
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    // Validate merged DjVu structure
+    if djvu_rs::Document::from_bytes(merged_djvu.clone()).is_err() {
+        return -7;
+    }
+
+    match std::fs::write(out_str, merged_djvu) {
+        Ok(_) => 0,
+        Err(_) => -8,
+    }
+}
+
+// MARK: - Zero-Copy Raw Image Dump PDF2DjVu Converter via pdfimages (with fallback)
+#[no_mangle]
+pub unsafe extern "C" fn djvu_convert_pdf_via_pdfimages(
+    pdf_path: *const c_char,
+    out_path: *const c_char,
+    quality_mode: u32,
+    dpi: u16,
+) -> i32 {
+    if pdf_path.is_null() || out_path.is_null() {
+        return -1;
+    }
+
+    let pdf_str = match CStr::from_ptr(pdf_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let out_str = match CStr::from_ptr(out_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let temp_ext_dir = std::env::temp_dir().join(format!("ext_pages_{}", generate_temp_id()));
+    if std::fs::create_dir_all(&temp_ext_dir).is_err() {
+        return -2;
+    }
+
+    let prefix = temp_ext_dir.join("page");
+
+    // Execute pdfimages -png to dump embedded image streams directly to disk
+    let pdfimages_status = std::process::Command::new("pdfimages")
+        .arg("-png")
+        .arg(pdf_str)
+        .arg(&prefix)
+        .status();
+
+    let pdfimages_success = match pdfimages_status {
+        Ok(st) => st.success(),
+        Err(_) => false,
+    };
+
+    if !pdfimages_success {
+        let _ = std::fs::remove_dir_all(&temp_ext_dir);
+        return -100; // Code -100 signals pdfimages is missing or failed, fallback to Swift page stream rendering
+    }
+
+    let dir_c_str = CString::new(temp_ext_dir.to_str().unwrap()).unwrap();
+    let out_c_str = CString::new(out_str).unwrap();
+
+    let res = djvu_convert_dir_to_djvu(dir_c_str.as_ptr(), out_c_str.as_ptr(), quality_mode, dpi);
+    let _ = std::fs::remove_dir_all(&temp_ext_dir);
+
+    res
 }
 
 #[no_mangle]

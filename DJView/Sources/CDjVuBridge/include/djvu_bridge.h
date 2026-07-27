@@ -21,6 +21,9 @@ char* djvu_doc_search_text_json(DjVuDocContext* ctx, const char* query);
 int32_t djvu_doc_export_page(DjVuDocContext* ctx, uint32_t page_idx, uint32_t format, const char* out_path);
 int32_t djvu_encode_rgba_to_djvu(const uint8_t* rgba_bytes, uint32_t width, uint32_t height, uint16_t dpi, const char* out_path);
 
+int32_t djvu_convert_dir_to_djvu(const char* dir_path, const char* out_path, uint32_t quality_mode, uint16_t dpi);
+int32_t djvu_convert_pdf_via_pdfimages(const char* pdf_path, const char* out_path, uint32_t quality_mode, uint16_t dpi);
+
 void djvu_string_free(char* ptr);
 
 #ifdef __cplusplus

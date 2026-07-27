@@ -375,6 +375,138 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
+    // MARK: - Streaming PDF2DjVu Conversion Engine (pdfimages + djvu-rs Lossless Manga Encoder)
+    public func convertPDFToDjVu(pdfURL: URL, targetURL: URL, qualityMode: UInt32 = 0) {
+        guard FileManager.default.fileExists(atPath: pdfURL.path) else { return }
+
+        isPDFConverting = true
+        isPDFConversionMinimized = false
+        isConversionCancelled = false
+        exportProgress = 0.05
+        exportStatusText = "Attempting zero-copy pdfimages extraction..."
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            guard let pdfPathCStr = pdfURL.path.cString(using: .utf8),
+                  let targetPathCStr = targetURL.path.cString(using: .utf8) else {
+                DispatchQueue.main.async {
+                    self.isPDFConverting = false
+                    self.exportStatusText = "Invalid file paths."
+                }
+                return
+            }
+
+            // 1. Try zero-copy pdfimages raw stream extraction first
+            let res = djvu_convert_pdf_via_pdfimages(pdfPathCStr, targetPathCStr, qualityMode, 300)
+
+            if res == 0 {
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.isPDFConverting = false
+                    self.openDocument(at: targetURL)
+                }
+                return
+            }
+
+            // 2. If pdfimages is not installed or returned -100, fallback to bounded 1-page disk stream rendering
+            DispatchQueue.main.async {
+                self.exportStatusText = "Extracting pages sequentially to disk..."
+            }
+
+            guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else {
+                DispatchQueue.main.async {
+                    self.isPDFConverting = false
+                    self.exportStatusText = "Failed to load PDF."
+                }
+                return
+            }
+
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pdf_ext_\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+
+            let total = pdfDoc.pageCount
+            for idx in 0..<total {
+                if self.isConversionCancelled {
+                    DispatchQueue.main.async {
+                        self.isPDFConverting = false
+                        self.exportStatusText = "Conversion cancelled."
+                    }
+                    return
+                }
+
+                let pct = Double(idx + 1) / Double(total)
+                DispatchQueue.main.async {
+                    self.exportProgress = pct * 0.7
+                    self.exportStatusText = "Streaming page \(idx + 1) of \(total) to disk..."
+                }
+
+                autoreleasepool {
+                    if let page = pdfDoc.page(at: idx),
+                       let pngData = self.renderPDFPageToPNGData(page: page, scale: 1.5) {
+                        let pageFile = tempDir.appendingPathComponent(String(format: "page_%05d.png", idx + 1))
+                        try? pngData.write(to: pageFile)
+                    }
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.exportProgress = 0.8
+                self.exportStatusText = "Encoding DjVu bundle with djvu-rs shared symbol dictionary..."
+            }
+
+            guard let tempDirCStr = tempDir.path.cString(using: .utf8) else { return }
+            let dirRes = djvu_convert_dir_to_djvu(tempDirCStr, targetPathCStr, qualityMode, 300)
+
+            DispatchQueue.main.async {
+                self.exportProgress = 1.0
+                self.isPDFConverting = false
+                if dirRes == 0 {
+                    self.openDocument(at: targetURL)
+                } else {
+                    self.exportStatusText = "Error encoding DjVu bundle: \(dirRes)"
+                }
+            }
+        }
+    }
+
+    private func renderPDFPageToPNGData(page: PDFPage, scale: CGFloat = 1.5) -> Data? {
+        let bounds = page.bounds(for: .mediaBox)
+        let maxDim: CGFloat = 2048.0
+        let currentMax = max(bounds.width, bounds.height)
+        let fitScale = min(scale, maxDim / max(1.0, currentMax))
+
+        let w = Int(bounds.width * fitScale)
+        let h = Int(bounds.height * fitScale)
+
+        let img = NSImage(size: NSSize(width: w, height: h))
+        img.lockFocus()
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            ctx.setFillColor(NSColor.white.cgColor)
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.scaleBy(x: fitScale, y: fitScale)
+            page.draw(with: .mediaBox, to: ctx)
+        }
+        img.unlockFocus()
+
+        guard let tiffData = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiffData),
+              let pngData = rep.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+
+        return pngData
+    }
+
+    public func cancelPDFConversion() {
+        isConversionCancelled = true
+    }
+
+    public func togglePDFConversionMinimized() {
+        isPDFConversionMinimized.toggle()
+    }
+
     // MARK: - High-Fidelity Cocoa PNG / JPEG Single Page Export
     public func exportCurrentPage(format: Int, targetURL: URL) -> Bool {
         guard let engine = engine else { return false }
