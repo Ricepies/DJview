@@ -38,7 +38,6 @@ DerivedData/
 .env
 
 # ===== Internal / Scratch files =====
-HANDOVER.md
 TODO.md
 Screenshot-*.png
 ccc.png
