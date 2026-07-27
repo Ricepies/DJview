@@ -4,9 +4,14 @@ import UniformTypeIdentifiers
 
 @main
 struct DJViewApp: App {
+    @StateObject private var viewModel = AppViewModel()
+
     var body: some Scene {
         WindowGroup {
-            MainView()
+            MainView(viewModel: viewModel)
+                .onOpenURL { url in
+                    viewModel.openDocument(at: url)
+                }
         }
         .windowStyle(.automatic)
         .windowToolbarStyle(.unified)
@@ -16,23 +21,19 @@ struct DJViewApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {
                     let panel = NSOpenPanel()
+                    panel.title = "Open DjVu Document"
+                    panel.message = "Choose a DjVu file (.djvu, .djv) to read"
                     panel.allowedContentTypes = [
                         UTType(filenameExtension: "djvu") ?? .data,
                         UTType(filenameExtension: "djv") ?? .data
                     ]
                     panel.allowsMultipleSelection = false
                     if panel.runModal() == .OK, let url = panel.url {
-                        NSApp.sendAction(#selector(AppDelegate.openDocumentURL(_:)), to: nil, from: url)
+                        viewModel.openDocument(at: url)
                     }
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
         }
-    }
-}
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    @objc func openDocumentURL(_ sender: Any?) {
-        // AppKit handle document open
     }
 }

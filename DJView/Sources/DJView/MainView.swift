@@ -3,10 +3,14 @@ import AppKit
 import UniformTypeIdentifiers
 
 public struct MainView: View {
-    @StateObject var viewModel = AppViewModel()
+    @ObservedObject var viewModel: AppViewModel
     @State private var isTargetedForDrop = false
     @State private var isSettingsSheetPresented = false
     @FocusState private var isSearchFieldFocused: Bool
+
+    public init(viewModel: AppViewModel = AppViewModel()) {
+        self.viewModel = viewModel
+    }
 
     public var body: some View {
         NavigationSplitView {

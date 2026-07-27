@@ -45,7 +45,7 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <key>CFBundleName</key>
     <string>DJView</string>
     <key>CFBundleDisplayName</key>
-    <string>DJView Preview</string>
+    <string>DJView Reader</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -71,12 +71,48 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
             <array>
                 <string>com.lizardtech.djvu</string>
                 <string>org.djvutoy.djvu</string>
+                <string>public.djvu</string>
             </array>
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>djvu</string>
                 <string>djv</string>
             </array>
+            <key>CFBundleTypeMIMETypes</key>
+            <array>
+                <string>image/vnd.djvu</string>
+                <string>image/x-djvu</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>AppIcon</string>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.lizardtech.djvu</string>
+            <key>UTTypeDescription</key>
+            <string>DjVu Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+                <string>public.composite-content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>djvu</string>
+                    <string>djv</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>image/vnd.djvu</string>
+                    <string>image/x-djvu</string>
+                </array>
+            </dict>
         </dict>
     </array>
 </dict>
@@ -84,6 +120,9 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
 EOF
 
 echo "APPL????" > "$CONTENTS_DIR/PkgInfo"
+
+echo "=== 4. Registering DJView.app with macOS LaunchServices ==="
+/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_BUNDLE" || true
 
 echo "=== DJView.app Successfully Built! ==="
 echo "Path: $APP_BUNDLE"
