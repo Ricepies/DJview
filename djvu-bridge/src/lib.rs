@@ -2,6 +2,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use serde::Serialize;
+use image::imageops::{resize, FilterType};
+use image::RgbaImage;
 use djvu_rs::{Document, TextZoneKind};
 use djvu_rs::djvu_encode::{PageEncoder, EncodeQuality};
 
@@ -181,7 +183,7 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -1,
     };
 
-    // Enforce min 1024px render dimension so IW44 wavelets do not hit octave downsample limits (which cause grey chunks below 43% zoom)
+    // 1. Enforce min 1024px render floor so IW44 wavelets do not hit octave downsample truncation
     let (req_w, req_h) = if target_width > 0 && target_height > 0 {
         let min_dim: f32 = 1024.0;
         let max_req = (target_width as f32).max(target_height as f32);
@@ -234,17 +236,31 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -2,
     };
 
+    // 2. Resample in Rust memory if we forced a larger render size for the IW44 floor
+    let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || pixmap.height != target_height) {
+        let (pw, ph) = (pixmap.width, pixmap.height);
+        if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
+            let small_img = resize(&large_img, target_width, target_height, FilterType::Triangle);
+            let (w, h) = small_img.dimensions();
+            (small_img.into_raw(), w, h)
+        } else {
+            (Vec::new(), 0, 0)
+        }
+    } else {
+        let (w, h) = (pixmap.width, pixmap.height);
+        (pixmap.data, w, h)
+    };
+
     if !out_actual_width.is_null() {
-        *out_actual_width = pixmap.width;
+        *out_actual_width = final_w;
     }
     if !out_actual_height.is_null() {
-        *out_actual_height = pixmap.height;
+        *out_actual_height = final_h;
     }
 
-    let buf_cap = (pixmap.width * pixmap.height * 4) as usize;
-    let copy_len = pixmap.data.len().min(buf_cap);
+    let copy_len = final_data.len();
     let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
-    out_slice.copy_from_slice(&pixmap.data[..copy_len]);
+    out_slice.copy_from_slice(&final_data);
 
     0
 }
