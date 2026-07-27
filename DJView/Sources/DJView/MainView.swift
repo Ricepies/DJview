@@ -47,6 +47,7 @@ public struct MainView: View {
                             EmptyStateView(
                                 recentFiles: viewModel.recentFiles,
                                 onOpen: selectAndOpenDocument,
+                                onConvertPDF: selectAndConvertPDF,
                                 onOpenRecent: { url in viewModel.openDocument(at: url) },
                                 onClearRecents: { viewModel.clearRecentFiles() }
                             )
@@ -92,9 +93,16 @@ public struct MainView: View {
         .onDrop(of: [.fileURL], isTargeted: $isTargetedForDrop) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url = url, url.pathExtension.lowercased() == "djvu" || url.pathExtension.lowercased() == "djv" {
-                    DispatchQueue.main.async {
-                        viewModel.openDocument(at: url)
+                if let url = url {
+                    let ext = url.pathExtension.lowercased()
+                    if ext == "djvu" || ext == "djv" {
+                        DispatchQueue.main.async {
+                            viewModel.openDocument(at: url)
+                        }
+                    } else if ext == "pdf" {
+                        DispatchQueue.main.async {
+                            viewModel.convertPDFToDjVu(pdfURL: url)
+                        }
                     }
                 }
             }
@@ -177,6 +185,18 @@ public struct MainView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openDocument(at: url)
+        }
+    }
+
+    private func selectAndConvertPDF() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Convert PDF to DjVu"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.convertPDFToDjVu(pdfURL: url)
         }
     }
 }
@@ -764,10 +784,11 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Empty State & Recently Opened System Welcome Screen
+// MARK: - Empty State & Recently Opened System Welcome Screen with PDF2DjVu
 struct EmptyStateView: View {
     let recentFiles: [URL]
     let onOpen: () -> Void
+    let onConvertPDF: () -> Void
     let onOpenRecent: (URL) -> Void
     let onClearRecents: () -> Void
 
@@ -786,14 +807,25 @@ struct EmptyStateView: View {
                     .foregroundColor(.secondary)
             }
 
-            Button(action: onOpen) {
-                Label("Open DjVu File...", systemImage: "arrow.up.doc.fill")
-                    .font(.title3)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+            HStack(spacing: 14) {
+                Button(action: onOpen) {
+                    Label("Open DjVu File...", systemImage: "arrow.up.doc.fill")
+                        .font(.title3)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button(action: onConvertPDF) {
+                    Label("Convert PDF to DjVu...", systemImage: "arrow.triangle.2.circlepath.doc.on.clipboard")
+                        .font(.title3)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
 
             if !recentFiles.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
@@ -837,7 +869,7 @@ struct EmptyStateView: View {
                 .padding(.top, 10)
             }
 
-            Text("Or drag and drop a .djvu file anywhere")
+            Text("Or drag and drop a .djvu / .pdf file anywhere")
                 .font(.body)
                 .foregroundColor(.secondary)
         }

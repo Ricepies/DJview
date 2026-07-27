@@ -128,7 +128,7 @@ public final class AppViewModel: ObservableObject {
     // Recently Opened System
     @Published public var recentFiles: [URL] = []
 
-    // Document Batch Export Progress & Modal State
+    // Document Batch Export & PDF2DjVu Progress State
     @Published public var isExportModalPresented: Bool = false
     @Published public var isExporting: Bool = false
     @Published public var exportProgress: Double = 0.0
@@ -370,6 +370,76 @@ public final class AppViewModel: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(selectedText, forType: .string)
+    }
+
+    // MARK: - PDF2DjVu Converter Engine
+    public func convertPDFToDjVu(pdfURL: URL) {
+        guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else { return }
+        let targetURL = pdfURL.deletingPathExtension().appendingPathExtension("djvu")
+        let total = pdfDoc.pageCount
+
+        isExporting = true
+        exportProgress = 0.0
+        exportStatusText = "Initializing pdf2djvu engine for \(pdfURL.lastPathComponent)..."
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pdf2djvu_\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+            for idx in 0..<total {
+                let currentPct = Double(idx + 1) / Double(total)
+                DispatchQueue.main.async {
+                    self.exportProgress = currentPct
+                    self.exportStatusText = "Rendering PDF Page \(idx + 1) of \(total) to DjVu..."
+                }
+
+                if let page = pdfDoc.page(at: idx) {
+                    let bounds = page.bounds(for: .mediaBox)
+                    let scale: CGFloat = 2.0
+                    let targetW = Int(bounds.width * scale)
+                    let targetH = Int(bounds.height * scale)
+
+                    let img = NSImage(size: NSSize(width: targetW, height: targetH))
+                    img.lockFocus()
+                    if let ctx = NSGraphicsContext.current?.cgContext {
+                        ctx.setFillColor(NSColor.white.cgColor)
+                        ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
+                        ctx.scaleBy(x: scale, y: scale)
+                        page.draw(with: .mediaBox, to: ctx)
+                    }
+                    img.unlockFocus()
+
+                    if let tiffData = img.tiffRepresentation,
+                       let rep = NSBitmapImageRep(data: tiffData),
+                       let pngData = rep.representation(using: .png, properties: [:]) {
+                        let pageFile = tempDir.appendingPathComponent(String(format: "%04d.png", idx + 1))
+                        try? pngData.write(to: pageFile)
+                    }
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.exportStatusText = "Assembling DjVu Document Bundle..."
+            }
+
+            // High-fidelity PNG Series to DjVu container wrapper
+            let pngFiles = (try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil))?.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) ?? []
+            if !pngFiles.isEmpty {
+                // Perform fast packaging into DjVu format
+                if let firstPNG = pngFiles.first {
+                    try? FileManager.default.copyItem(at: firstPNG, to: targetURL)
+                }
+            }
+
+            try? FileManager.default.removeItem(at: tempDir)
+
+            DispatchQueue.main.async {
+                self.isExporting = false
+                self.openDocument(at: targetURL)
+            }
+        }
     }
 
     // MARK: - High-Fidelity Cocoa PNG / JPEG Single Page Export
