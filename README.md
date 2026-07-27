@@ -135,4 +135,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT © 2024 — see [LICENSE](LICENSE).
+**DJView Strong Copyleft License v1.0** — see [LICENSE](LICENSE).
+
+All Derivative Works must remain open source under the same license.
+No trademark, subscription, or other legal mechanism may be used to restrict
+redistribution of compiled binaries. Network/SaaS deployments must publish
+full source code. This closes the [Red Hat loophole](https://en.wikipedia.org/wiki/Red_Hat#CentOS_controversy) explicitly.

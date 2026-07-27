@@ -1,21 +1,142 @@
-MIT License
+DJView Strong Copyleft License
+Version 1.0, 2024
 
 Copyright (c) 2024 DJView Contributors
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+PREAMBLE
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This license is designed to ensure that DJView and all derivative works
+remain free and open source in perpetuity. It is inspired by the GNU
+Affero General Public License v3 (AGPL-3.0) and strengthens it with
+explicit provisions to close known corporate redistribution loopholes.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+TERMS AND CONDITIONS
+
+1. DEFINITIONS
+
+   "Software" means DJView and its source code, object code, documentation,
+   and all associated files covered by this license.
+
+   "Derivative Work" means any work that is based on or incorporates any
+   portion of the Software, including modifications, translations, adaptations,
+   and works that link against or embed the Software.
+
+   "Distribute" means to make the Software or a Derivative Work available to
+   any third party, whether by download, physical media, network access,
+   or any other means.
+
+   "Network Use" means running the Software or a Derivative Work on a server
+   or networked system such that other users can interact with it remotely.
+
+2. GRANT OF RIGHTS
+
+   Subject to the terms of this license, each contributor grants you a
+   worldwide, royalty-free, non-exclusive license to:
+
+   a) Use, copy, and study the Software for any purpose.
+   b) Modify the Software and create Derivative Works.
+   c) Distribute the Software and Derivative Works.
+
+3. COPYLEFT REQUIREMENT
+
+   Any Derivative Work you Distribute or make available via Network Use MUST:
+
+   a) Be released in full under this exact license, without modification
+      to the license terms.
+   b) Include complete, buildable source code for the entire Derivative Work,
+      made available at no charge, in a publicly accessible location.
+   c) Prominently state that it is a Derivative Work of DJView and identify
+      all significant modifications made.
+   d) Retain all copyright notices, attribution notices, and this license
+      in every copy and in any documentation.
+
+   You may NOT sublicense, re-license, or impose any additional terms that
+   restrict the rights granted herein.
+
+4. NETWORK USE PROVISION
+
+   If you operate a Derivative Work as a network service (including SaaS,
+   cloud deployment, or any form of remote access), you MUST make the complete
+   corresponding source code available to all users of that service, under
+   this license, at no charge. A publicly accessible source repository
+   satisfies this requirement.
+
+5. NO REDISTRIBUTION RESTRICTIONS
+
+   You may NOT use any legal mechanism — including but not limited to trademark
+   rights, patent rights, subscription agreements, terms of service, or
+   end-user license agreements — to restrict any recipient's ability to:
+
+   a) Redistribute the Software or Derivative Work in source or binary form.
+   b) Build the Software from source.
+   c) Exercise any right granted by this license.
+
+   This provision specifically closes the practice of distributing GPL-licensed
+   source while using trademark or subscription terms to prevent redistribution
+   of compiled binaries (sometimes referred to as the "Red Hat loophole").
+
+6. ANTI-TIVOIZATION
+
+   If you Distribute the Software or a Derivative Work in or alongside hardware
+   that restricts the installation or execution of modified versions (e.g.,
+   through hardware signature verification or secure boot lockout), you MUST
+   also provide the information or keys necessary for users to install and run
+   modified versions on that hardware.
+
+7. PATENTS
+
+   Each contributor grants you a royalty-free, worldwide, non-exclusive patent
+   license under the contributor's essential patent claims, solely to the extent
+   necessary to exercise the rights granted by this license. If you initiate
+   patent litigation against any party alleging that the Software infringes a
+   patent, your license from that contributor terminates immediately.
+
+8. SOURCE CODE AVAILABILITY
+
+   When you Distribute a Derivative Work in binary or compiled form, you MUST
+   simultaneously make the complete corresponding source code available, either:
+
+   a) By including it in the same distribution, or
+   b) By providing a written offer, valid for at least three years, to supply
+      the source code to any third party who requests it at no charge, or
+   c) By publishing it in a publicly accessible version control repository
+      and including the URL in the distribution.
+
+9. DISCLAIMER OF WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. THE ENTIRE RISK AS
+   TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU.
+
+10. LIMITATION OF LIABILITY
+
+    IN NO EVENT SHALL ANY CONTRIBUTOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+    INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING LOSS
+    OF DATA, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) ARISING FROM THE USE
+    OR INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+    SUCH DAMAGES.
+
+11. TERMINATION
+
+    Your rights under this license terminate automatically if you violate any
+    of its terms. Upon termination you must cease all distribution of the
+    Software and Derivative Works. Sections 9, 10, and 12 survive termination.
+
+12. GOVERNING PRINCIPLES
+
+    This license shall be interpreted to maximize the freedom of end users
+    and contributors. Any ambiguity shall be resolved in favor of the
+    interpretation that most strongly ensures the Software and all Derivative
+    Works remain permanently free and open source.
+
+END OF TERMS AND CONDITIONS
+
+APPLYING THIS LICENSE TO YOUR WORK
+
+To apply this license to your Derivative Work, attach the following notice:
+
+    Copyright (c) [YEAR] [YOUR NAME]
+
+    This program is licensed under the DJView Strong Copyleft License v1.0.
+    See the LICENSE file or https://github.com/YOUR_USERNAME/djview for terms.
