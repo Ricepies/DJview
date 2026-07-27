@@ -73,17 +73,7 @@ public struct MainView: View {
                         }
                     }
 
-                    // Non-Intrusive Floating Background Task Pill (When Minimized)
-                    if viewModel.isPDFConverting && viewModel.isPDFConversionMinimized {
-                        HStack {
-                            PDFConversionMinimizedPill(viewModel: viewModel)
-                                .padding(.leading, 18)
-                                .padding(.bottom, 20)
-                            Spacer()
-                        }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(150)
-                    }
+
 
                     // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
                     if viewModel.engine != nil {
@@ -685,7 +675,44 @@ struct CanvasFloatingHUD: View {
     @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        VStack(spacing: 8) {
+            // Refined Non-Intrusive Export Progress Banner (Centered Above HUD)
+            if viewModel.isExporting || (viewModel.isPDFConverting && viewModel.isPDFConversionMinimized) {
+                HStack(spacing: 10) {
+                    ProgressView(value: viewModel.exportProgress)
+                        .progressViewStyle(.linear)
+                        .frame(width: 130)
+
+                    Text("\(viewModel.exportStatusText) (\(Int(viewModel.exportProgress * 100))%)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.isExportModalPresented = true
+                        }
+                    }) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Expand Conversion Dialog")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Canvas Control Bar (Page Stepper, Zoom, Layout Switcher)
+            HStack(spacing: 14) {
             // Page Navigation Stepper
             HStack(spacing: 8) {
                 Button(action: {
@@ -795,6 +822,7 @@ struct CanvasFloatingHUD: View {
             Capsule()
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
+        }
     }
 }
 
