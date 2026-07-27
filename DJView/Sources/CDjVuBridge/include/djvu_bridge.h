@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 typedef struct DjVuDocContext DjVuDocContext;
+typedef struct DjVuMultiPageEncoder DjVuMultiPageEncoder;
 
 DjVuDocContext* djvu_doc_open(const char* path);
 void djvu_doc_free(DjVuDocContext* ctx);
@@ -20,7 +21,12 @@ char* djvu_doc_get_text_zones_json(DjVuDocContext* ctx, uint32_t page_idx);
 char* djvu_doc_search_text_json(DjVuDocContext* ctx, const char* query);
 int32_t djvu_doc_export_page(DjVuDocContext* ctx, uint32_t page_idx, uint32_t format, const char* out_path);
 int32_t djvu_encode_rgba_to_djvu(const uint8_t* rgba_bytes, uint32_t width, uint32_t height, uint16_t dpi, const char* out_path);
-int32_t djvu_encode_png_pages_to_djvu(const uint8_t* const* png_data_ptrs, const uint32_t* png_data_lens, uint32_t page_count, uint16_t dpi, const char* out_path);
+
+DjVuMultiPageEncoder* djvu_encoder_create(uint16_t dpi);
+int32_t djvu_encoder_add_png_page(DjVuMultiPageEncoder* encoder, const uint8_t* png_data, uint32_t png_len);
+int32_t djvu_encoder_finish(DjVuMultiPageEncoder* encoder, const char* out_path);
+void djvu_encoder_free(DjVuMultiPageEncoder* encoder);
+
 void djvu_string_free(char* ptr);
 
 #ifdef __cplusplus

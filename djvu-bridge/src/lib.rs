@@ -9,6 +9,11 @@ pub struct DjVuDocContext {
     doc: Document,
 }
 
+pub struct DjVuMultiPageEncoder {
+    page_bytes: Vec<Vec<u8>>,
+    dpi: u16,
+}
+
 #[derive(Serialize)]
 struct BookmarkNode {
     title: String,
@@ -375,68 +380,87 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
     }
 }
 
+// MARK: - Streaming Multi-Page DjVu Encoder Engine with djvm::merge
 #[no_mangle]
-pub unsafe extern "C" fn djvu_encode_png_pages_to_djvu(
-    png_data_ptrs: *const *const u8,
-    png_data_lens: *const u32,
-    page_count: u32,
-    dpi: u16,
-    out_path: *const c_char,
+pub unsafe extern "C" fn djvu_encoder_create(dpi: u16) -> *mut DjVuMultiPageEncoder {
+    Box::into_raw(Box::new(DjVuMultiPageEncoder {
+        page_bytes: Vec::new(),
+        dpi: if dpi == 0 { 300 } else { dpi },
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn djvu_encoder_add_png_page(
+    encoder: *mut DjVuMultiPageEncoder,
+    png_data: *const u8,
+    png_len: u32,
 ) -> i32 {
-    if png_data_ptrs.is_null() || png_data_lens.is_null() || out_path.is_null() || page_count == 0 {
+    if encoder.is_null() || png_data.is_null() || png_len == 0 {
         return -1;
     }
 
+    let slice = std::slice::from_raw_parts(png_data, png_len as usize);
+    let dynamic_img = match image::load_from_memory(slice) {
+        Ok(img) => img,
+        Err(_) => return -2,
+    };
+
+    let rgba_img = dynamic_img.to_rgba8();
+    let (w, h) = rgba_img.dimensions();
+
+    let pixmap = djvu_rs::Pixmap {
+        width: w,
+        height: h,
+        data: rgba_img.into_raw(),
+    };
+
+    let enc = PageEncoder::from_pixmap(&pixmap).with_dpi((*encoder).dpi);
+
+    let single_page_djvu = match enc.encode() {
+        Ok(bytes) => bytes,
+        Err(_) => return -3,
+    };
+
+    (*encoder).page_bytes.push(single_page_djvu);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn djvu_encoder_finish(
+    encoder: *mut DjVuMultiPageEncoder,
+    out_path: *const c_char,
+) -> i32 {
+    if encoder.is_null() || out_path.is_null() {
+        return -1;
+    }
+
+    let enc_box = Box::from_raw(encoder);
     let path_str = match CStr::from_ptr(out_path).to_str() {
         Ok(s) => s,
         Err(_) => return -1,
     };
 
-    let count = page_count as usize;
-    let ptrs_slice = std::slice::from_raw_parts(png_data_ptrs, count);
-    let lens_slice = std::slice::from_raw_parts(png_data_lens, count);
-
-    let mut pixmaps = Vec::with_capacity(count);
-
-    for i in 0..count {
-        let p_ptr = ptrs_slice[i];
-        let p_len = lens_slice[i] as usize;
-
-        if p_ptr.is_null() || p_len == 0 {
-            return -2;
-        }
-
-        let slice = std::slice::from_raw_parts(p_ptr, p_len);
-        let dynamic_img = match image::load_from_memory(slice) {
-            Ok(img) => img,
-            Err(_) => return -3,
-        };
-
-        let rgba_img = dynamic_img.to_rgba8();
-        let (w, h) = rgba_img.dimensions();
-
-        pixmaps.push(djvu_rs::Pixmap {
-            width: w,
-            height: h,
-            data: rgba_img.into_raw(),
-        });
+    if enc_box.page_bytes.is_empty() {
+        return -2;
     }
 
-    let djvu_bytes = match djvu_rs::djvu_encode::encode_djvm_layered_shared_with_thumbnails(
-        &pixmaps,
-        djvu_rs::djvu_encode::EncodeQuality::Quality,
-        if dpi == 0 { 300 } else { dpi },
-        None,
-        5,
-        true,
-    ) {
-        Ok(b) => b,
-        Err(_) => return -4,
+    let page_refs: Vec<&[u8]> = enc_box.page_bytes.iter().map(|v| v.as_slice()).collect();
+
+    let merged_djvu = match djvu_rs::djvm::merge(&page_refs) {
+        Ok(bytes) => bytes,
+        Err(_) => return -3,
     };
 
-    match std::fs::write(path_str, djvu_bytes) {
+    match std::fs::write(path_str, merged_djvu) {
         Ok(_) => 0,
-        Err(_) => -5,
+        Err(_) => -4,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn djvu_encoder_free(encoder: *mut DjVuMultiPageEncoder) {
+    if !encoder.is_null() {
+        drop(Box::from_raw(encoder));
     }
 }
 

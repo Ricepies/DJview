@@ -375,7 +375,7 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
-    // MARK: - PDF2DjVu Multi-Page Bundled Converter Engine with High-Fidelity PNG Pipeline
+    // MARK: - Bounded Memory Streaming PDF2DjVu Converter Engine
     public func convertPDFToDjVu(pdfURL: URL, targetURL: URL) {
         guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else { return }
         let total = pdfDoc.pageCount
@@ -384,15 +384,22 @@ public final class AppViewModel: ObservableObject {
         isPDFConversionMinimized = false
         isConversionCancelled = false
         exportProgress = 0.0
-        exportStatusText = "Initializing pdf2djvu encoder for \(pdfURL.lastPathComponent)..."
+        exportStatusText = "Initializing pdf2djvu streaming encoder for \(pdfURL.lastPathComponent)..."
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            var pngDataBuffers: [Data] = []
+            guard let encoder = djvu_encoder_create(300) else {
+                DispatchQueue.main.async {
+                    self.isPDFConverting = false
+                    self.exportStatusText = "Failed to initialize DjVu encoder."
+                }
+                return
+            }
 
             for idx in 0..<total {
                 if self.isConversionCancelled {
+                    djvu_encoder_free(encoder)
                     DispatchQueue.main.async {
                         self.isPDFConverting = false
                         self.exportStatusText = "Conversion cancelled."
@@ -402,47 +409,44 @@ public final class AppViewModel: ObservableObject {
 
                 let currentPct = Double(idx + 1) / Double(total)
                 DispatchQueue.main.async {
-                    self.exportProgress = currentPct * 0.8
-                    self.exportStatusText = "Rendering PDF Page \(idx + 1) of \(total)..."
+                    self.exportProgress = currentPct * 0.9
+                    self.exportStatusText = "Encoding Page \(idx + 1) of \(total) into DjVu stream..."
                 }
 
-                if let page = pdfDoc.page(at: idx),
-                   let pngData = self.renderPDFPageToPNGData(page: page, scale: 2.0) {
-                    pngDataBuffers.append(pngData)
+                autoreleasepool {
+                    if let page = pdfDoc.page(at: idx),
+                       let pngData = self.renderPDFPageToPNGData(page: page, scale: 2.0) {
+                        pngData.withUnsafeBytes { rawBuffer in
+                            if let base = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) {
+                                let addRes = djvu_encoder_add_png_page(encoder, base, UInt32(pngData.count))
+                                print("Encoded page \(idx + 1)/\(total) status code: \(addRes)")
+                            }
+                        }
+                    }
                 }
             }
 
-            if self.isConversionCancelled { return }
+            if self.isConversionCancelled {
+                djvu_encoder_free(encoder)
+                return
+            }
 
             DispatchQueue.main.async {
-                self.exportProgress = 0.85
-                self.exportStatusText = "Encoding \(total) pages into multi-page DjVu bundle with thumbnails..."
+                self.exportProgress = 0.95
+                self.exportStatusText = "Merging pages into final multi-page DjVu bundle..."
             }
 
-            var pointers: [UnsafePointer<UInt8>?] = []
-            var lengths: [UInt32] = []
-
-            for data in pngDataBuffers {
-                lengths.append(UInt32(data.count))
-                data.withUnsafeBytes { ptr in
-                    pointers.append(ptr.baseAddress?.assumingMemoryBound(to: UInt8.self))
-                }
-            }
-
-            let res = pointers.withUnsafeBufferPointer { ptrsBuffer -> Int32 in
-                guard let basePtrs = ptrsBuffer.baseAddress else { return -1 }
-                return lengths.withUnsafeBufferPointer { lenBuf in
-                    guard let baseLens = lenBuf.baseAddress else { return -1 }
-                    return djvu_encode_png_pages_to_djvu(basePtrs, baseLens, UInt32(total), 300, targetURL.path)
-                }
-            }
-
-            print("Multi-page DjVu PNG encoding result code: \(res)")
+            let finishRes = djvu_encoder_finish(encoder, targetURL.path)
+            print("Finished multi-page DjVu encoding exit code: \(finishRes)")
 
             DispatchQueue.main.async {
                 self.exportProgress = 1.0
                 self.isPDFConverting = false
-                self.openDocument(at: targetURL)
+                if finishRes == 0 {
+                    self.openDocument(at: targetURL)
+                } else {
+                    self.exportStatusText = "Error merging DjVu document."
+                }
             }
         }
     }
@@ -720,7 +724,7 @@ public final class AppViewModel: ObservableObject {
           </spine>
         </package>
         """
-        try? opfContent.write(to: ops.appendingPathComponent("package.opf"), atomically: true, encoding: .utf8)
+        try? opfContent.write(to: ops.appendingPathComponent(opfContent), atomically: true, encoding: .utf8)
 
         DispatchQueue.main.async {
             self.exportStatusText = "Assembling EPUB Package..."
