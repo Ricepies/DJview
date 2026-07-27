@@ -75,11 +75,19 @@ public struct MainView: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
             .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
             .toolbar {
-                CustomToolbar(viewModel: viewModel, onOpenDocument: selectAndOpenDocument, onOpenSettings: { isSettingsSheetPresented = true })
+                CustomToolbar(
+                    viewModel: viewModel,
+                    onOpenDocument: selectAndOpenDocument,
+                    onOpenSettings: { isSettingsSheetPresented = true },
+                    onOpenExportModal: { viewModel.isExportModalPresented = true }
+                )
             }
         }
         .sheet(isPresented: $isSettingsSheetPresented) {
             SettingsView(viewModel: viewModel)
+        }
+        .sheet(isPresented: $viewModel.isExportModalPresented) {
+            DocumentConversionSheet(viewModel: viewModel)
         }
         .onDrop(of: [.fileURL], isTargeted: $isTargetedForDrop) { providers in
             guard let provider = providers.first else { return false }
@@ -143,6 +151,9 @@ public struct MainView: View {
                     }
                 }) { EmptyView() }.keyboardShortcut("n", modifiers: [.command, .shift])
 
+                // Cmd+E: Open Document Conversion Modal
+                Button(action: { viewModel.isExportModalPresented = true }) { EmptyView() }.keyboardShortcut("e", modifiers: [.command, .shift])
+
                 // Cmd+,: Open Settings
                 Button(action: { isSettingsSheetPresented = true }) { EmptyView() }.keyboardShortcut(",", modifiers: .command)
 
@@ -166,6 +177,166 @@ public struct MainView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openDocument(at: url)
+        }
+    }
+}
+
+// MARK: - Intuitive & Structured Document Conversion Modal Sheet
+struct DocumentConversionSheet: View {
+    @ObservedObject var viewModel: AppViewModel
+    @Environment(\.dismiss) var dismiss
+
+    @State private var selectedFormat: ExportDocumentFormat = .pdf
+    @State private var rangeOption: Int = 0 // 0 = All, 1 = Current Page, 2 = Custom
+    @State private var customStartPage: Int = 1
+    @State private var customEndPage: Int = 1
+    @State private var qualityScale: Double = 1.5
+
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.triangle.2.circlepath.doc.on.clipboard")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.accentColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Document Conversion & Export")
+                        .font(.title2)
+                        .bold()
+                    Text("Convert DjVu to PDF, EPUB, CBZ, TIFF, or PNG Series")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            Divider()
+
+            if viewModel.isExporting {
+                VStack(spacing: 16) {
+                    ProgressView(value: viewModel.exportProgress)
+                        .progressViewStyle(.linear)
+
+                    Text(viewModel.exportStatusText)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 30)
+            } else {
+                Form {
+                    Section("Target Format") {
+                        Picker("Convert To", selection: $selectedFormat) {
+                            ForEach(ExportDocumentFormat.allCases) { fmt in
+                                Label(fmt.rawValue, systemImage: fmt.icon)
+                                    .tag(fmt)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    Section("Page Range") {
+                        Picker("Pages", selection: $rangeOption) {
+                            Text("All Pages (1 – \(viewModel.totalPages))").tag(0)
+                            Text("Current Page Only (\(viewModel.currentPageIndex + 1))").tag(1)
+                            Text("Custom Range").tag(2)
+                        }
+                        .pickerStyle(.radioGroup)
+
+                        if rangeOption == 2 {
+                            HStack {
+                                Text("From Page:")
+                                TextField("Start", value: $customStartPage, formatter: NumberFormatter())
+                                    .frame(width: 60)
+                                    .textFieldStyle(.roundedBorder)
+
+                                Text("To Page:")
+                                TextField("End", value: $customEndPage, formatter: NumberFormatter())
+                                    .frame(width: 60)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+                    }
+
+                    Section("Image Resolution / Quality") {
+                        Picker("Resolution Scale", selection: $qualityScale) {
+                            Text("1.0x Standard (Fast)").tag(1.0)
+                            Text("1.5x Crisp (Recommended)").tag(1.5)
+                            Text("2.0x High Retina").tag(2.0)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+
+                HStack {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    Button("Export & Convert...") {
+                        triggerExportPanel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .onAppear {
+            customStartPage = 1
+            customEndPage = max(1, viewModel.totalPages)
+        }
+    }
+
+    private func triggerExportPanel() {
+        let docTitle = viewModel.documentURL?.deletingPathExtension().lastPathComponent ?? "Exported_Document"
+
+        var sPage = 0
+        var ePage = max(0, viewModel.totalPages - 1)
+
+        if rangeOption == 1 {
+            sPage = viewModel.currentPageIndex
+            ePage = viewModel.currentPageIndex
+        } else if rangeOption == 2 {
+            sPage = max(0, min(viewModel.totalPages - 1, customStartPage - 1))
+            ePage = max(sPage, min(viewModel.totalPages - 1, customEndPage - 1))
+        }
+
+        if selectedFormat == .pngFolder {
+            let openPanel = NSOpenPanel()
+            openPanel.canChooseDirectories = true
+            openPanel.canChooseFiles = false
+            openPanel.canCreateDirectories = true
+            openPanel.prompt = "Export PNG Series To"
+            openPanel.directoryURL = viewModel.documentURL?.deletingLastPathComponent()
+
+            if openPanel.runModal() == .OK, let targetFolder = openPanel.url {
+                let dest = targetFolder.appendingPathComponent("\(docTitle)_PNG_Series")
+                viewModel.convertDocumentBatch(
+                    format: selectedFormat,
+                    startPage: sPage,
+                    endPage: ePage,
+                    qualityScale: qualityScale,
+                    targetURL: dest
+                )
+            }
+        } else {
+            let savePanel = NSSavePanel()
+            savePanel.nameFieldStringValue = "\(docTitle).\(selectedFormat.fileExtension)"
+            savePanel.directoryURL = viewModel.documentURL?.deletingLastPathComponent()
+
+            if savePanel.runModal() == .OK, let targetFile = savePanel.url {
+                viewModel.convertDocumentBatch(
+                    format: selectedFormat,
+                    startPage: sPage,
+                    endPage: ePage,
+                    qualityScale: qualityScale,
+                    targetURL: targetFile
+                )
+            }
         }
     }
 }
@@ -629,6 +800,7 @@ struct CustomToolbar: ToolbarContent {
     @ObservedObject var viewModel: AppViewModel
     let onOpenDocument: () -> Void
     let onOpenSettings: () -> Void
+    let onOpenExportModal: () -> Void
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
@@ -676,37 +848,20 @@ struct CustomToolbar: ToolbarContent {
                 }
                 .help("Search Document (Cmd+F)")
 
+                // Top Bar: Convert & Export Document Modal Button
+                Button(action: onOpenExportModal) {
+                    Image(systemName: "square.and.arrow.up.on.square")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .help("Convert & Export Document (Cmd+Shift+E)")
+
                 // Settings Button
                 Button(action: onOpenSettings) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 14))
                 }
                 .help("Preferences (Cmd+,)")
-
-                // Export Page Button
-                Menu {
-                    Button("Export Page as PNG...") {
-                        exportPage(format: 0)
-                    }
-                    Button("Export Page as JPEG...") {
-                        exportPage(format: 1)
-                    }
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14))
-                }
-                .help("Export Page")
             }
-        }
-    }
-
-    private func exportPage(format: Int) {
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [format == 0 ? .png : .jpeg]
-        savePanel.nameFieldStringValue = "Page_\(viewModel.currentPageIndex + 1).\(format == 0 ? "png" : "jpg")"
-
-        if savePanel.runModal() == .OK, let url = savePanel.url {
-            _ = viewModel.exportCurrentPage(format: format, targetURL: url)
         }
     }
 }

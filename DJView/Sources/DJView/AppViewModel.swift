@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import Combine
+import PDFKit
 import CDjVuBridge
 
 public enum SidebarTab: String, CaseIterable, Identifiable {
@@ -27,6 +28,36 @@ public enum PageTurnDirection {
     case backwardHorizontal
     case forwardVertical
     case backwardVertical
+}
+
+public enum ExportDocumentFormat: String, CaseIterable, Identifiable {
+    case pdf = "PDF Document (.pdf)"
+    case epub = "EPUB E-Book (.epub)"
+    case cbz = "CBZ Comic Archive (.cbz)"
+    case tiff = "TIFF Multi-Page Image (.tiff)"
+    case pngFolder = "PNG Image Series Folder"
+
+    public var id: String { rawValue }
+
+    public var fileExtension: String {
+        switch self {
+        case .pdf: return "pdf"
+        case .epub: return "epub"
+        case .cbz: return "cbz"
+        case .tiff: return "tiff"
+        case .pngFolder: return "folder"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .pdf: return "doc.richtext"
+        case .epub: return "book.closed"
+        case .cbz: return "archivebox"
+        case .tiff: return "photo.on.rectangle"
+        case .pngFolder: return "folder.badge.gearshape"
+        }
+    }
 }
 
 // MARK: - Standard DjVu ANTZ Annotation / Metadata Sidecar Structure
@@ -96,6 +127,12 @@ public final class AppViewModel: ObservableObject {
 
     // Recently Opened System
     @Published public var recentFiles: [URL] = []
+
+    // Document Batch Export Progress & Modal State
+    @Published public var isExportModalPresented: Bool = false
+    @Published public var isExporting: Bool = false
+    @Published public var exportProgress: Double = 0.0
+    @Published public var exportStatusText: String = ""
 
     private var isRestoringState: Bool = false
     private var cancellables = Set<AnyCancellable>()
@@ -335,7 +372,7 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
-    // MARK: - High-Fidelity Cocoa PNG / JPEG Export
+    // MARK: - High-Fidelity Cocoa PNG / JPEG Single Page Export
     public func exportCurrentPage(format: Int, targetURL: URL) -> Bool {
         guard let engine = engine else { return false }
         let dim = engine.getPageDimension(pageIndex: currentPageIndex) ?? (600, 800, 72)
@@ -386,6 +423,393 @@ public final class AppViewModel: ObservableObject {
         }
 
         return engine.exportPage(pageIndex: currentPageIndex, format: format, outputPath: targetURL.path)
+    }
+
+    // MARK: - Batch Document Conversion System (DjVu -> PDF, EPUB, CBZ, TIFF, PNG Series)
+    public func convertDocumentBatch(
+        format: ExportDocumentFormat,
+        startPage: Int,
+        endPage: Int,
+        qualityScale: Double,
+        targetURL: URL
+    ) {
+        guard let engine = engine else { return }
+        let total = max(1, endPage - startPage + 1)
+
+        isExporting = true
+        exportProgress = 0.0
+        exportStatusText = "Preparing conversion for \(format.rawValue)..."
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            switch format {
+            case .pdf:
+                self.performPDFConversion(engine: engine, startPage: startPage, endPage: endPage, scale: qualityScale, targetURL: targetURL, total: total)
+
+            case .cbz:
+                self.performCBZConversion(engine: engine, startPage: startPage, endPage: endPage, scale: qualityScale, targetURL: targetURL, total: total)
+
+            case .epub:
+                self.performEPUBConversion(engine: engine, startPage: startPage, endPage: endPage, scale: qualityScale, targetURL: targetURL, total: total)
+
+            case .tiff:
+                self.performTIFFConversion(engine: engine, startPage: startPage, endPage: endPage, scale: qualityScale, targetURL: targetURL, total: total)
+
+            case .pngFolder:
+                self.performPNGFolderConversion(engine: engine, startPage: startPage, endPage: endPage, scale: qualityScale, targetURL: targetURL, total: total)
+            }
+        }
+    }
+
+    private func performPDFConversion(engine: DjVuEngine, startPage: Int, endPage: Int, scale: Double, targetURL: URL, total: Int) {
+        let pdfDoc = PDFDocument()
+
+        for (idx, pIdx) in (startPage...endPage).enumerated() {
+            let currentPct = Double(idx + 1) / Double(total)
+            DispatchQueue.main.async {
+                self.exportProgress = currentPct
+                self.exportStatusText = "Converting Page \(pIdx + 1) of \(endPage + 1) to PDF..."
+            }
+
+            if let img = renderPageToNSImage(engine: engine, pageIndex: pIdx, scale: scale),
+               let pdfPage = PDFPage(image: img) {
+                pdfDoc.insert(pdfPage, at: pdfDoc.pageCount)
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.exportStatusText = "Finalizing PDF File..."
+        }
+
+        let success = pdfDoc.write(to: targetURL)
+
+        DispatchQueue.main.async {
+            self.isExporting = false
+            self.isExportModalPresented = false
+            if success {
+                NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+            }
+        }
+    }
+
+    private func performCBZConversion(engine: DjVuEngine, startPage: Int, endPage: Int, scale: Double, targetURL: URL, total: Int) {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        for (idx, pIdx) in (startPage...endPage).enumerated() {
+            let currentPct = Double(idx + 1) / Double(total)
+            DispatchQueue.main.async {
+                self.exportProgress = currentPct
+                self.exportStatusText = "Processing Page \(pIdx + 1) of \(endPage + 1) for CBZ Archive..."
+            }
+
+            if let imgData = renderPageToImageData(engine: engine, pageIndex: pIdx, scale: scale, format: .jpeg) {
+                let fileName = String(format: "%04d.jpg", idx + 1)
+                let filePath = tempDir.appendingPathComponent(fileName)
+                try? imgData.write(to: filePath)
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.exportStatusText = "Compressing CBZ Archive..."
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.currentDirectoryURL = tempDir
+        process.arguments = ["-r", targetURL.path, "."]
+
+        try? process.run()
+        process.waitUntilExit()
+
+        try? FileManager.default.removeItem(at: tempDir)
+
+        DispatchQueue.main.async {
+            self.isExporting = false
+            self.isExportModalPresented = false
+            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+        }
+    }
+
+    private func performEPUBConversion(engine: DjVuEngine, startPage: Int, endPage: Int, scale: Double, targetURL: URL, total: Int) {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("epub_\(UUID().uuidString)")
+        let metaInf = tempDir.appendingPathComponent("META-INF")
+        let ops = tempDir.appendingPathComponent("OPS")
+        let imagesDir = ops.appendingPathComponent("images")
+
+        try? FileManager.default.createDirectory(at: metaInf, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+
+        // mimetype
+        try? "application/epub+zip".write(to: tempDir.appendingPathComponent("mimetype"), atomically: true, encoding: .ascii)
+
+        // container.xml
+        let containerXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """
+        try? containerXML.write(to: metaInf.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        var manifestItems: [String] = []
+        var spineItems: [String] = []
+
+        for (idx, pIdx) in (startPage...endPage).enumerated() {
+            let currentPct = Double(idx + 1) / Double(total)
+            DispatchQueue.main.async {
+                self.exportProgress = currentPct
+                self.exportStatusText = "Formatting Page \(pIdx + 1) of \(endPage + 1) for EPUB..."
+            }
+
+            let imgName = String(format: "page_%04d.jpg", idx + 1)
+            let imgURL = imagesDir.appendingPathComponent(imgName)
+            if let imgData = renderPageToImageData(engine: engine, pageIndex: pIdx, scale: scale, format: .jpeg) {
+                try? imgData.write(to: imgURL)
+            }
+
+            let pageId = String(format: "page_%04d", idx + 1)
+            let xhtmlName = "\(pageId).xhtml"
+
+            let textZones = engine.getTextZones(pageIndex: pIdx)
+            let extractedText = extractText(from: textZones)
+
+            let xhtmlContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head><title>Page \(pIdx + 1)</title></head>
+            <body>
+              <div><img src="images/\(imgName)" alt="Page \(pIdx + 1)" style="max-width:100%;"/></div>
+              <div class="ocr-text">\(extractedText)</div>
+            </body>
+            </html>
+            """
+            try? xhtmlContent.write(to: ops.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
+
+            manifestItems.append("<item id=\"\(pageId)\" href=\"\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
+            manifestItems.append("<item id=\"img_\(pageId)\" href=\"images/\(imgName)\" media-type=\"image/jpeg\"/>")
+            spineItems.append("<itemref idref=\"\(pageId)\"/>")
+        }
+
+        // package.opf
+        let docTitle = documentURL?.deletingPathExtension().lastPathComponent ?? "DjVu Document"
+        let opfContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>\(docTitle)</dc:title>
+            <dc:language>en</dc:language>
+            <dc:identifier id="BookId">urn:uuid:\(UUID().uuidString)</dc:identifier>
+          </metadata>
+          <manifest>
+            \(manifestItems.joined(separator: "\n    "))
+          </manifest>
+          <spine>
+            \(spineItems.joined(separator: "\n    "))
+          </spine>
+        </package>
+        """
+        try? opfContent.write(to: ops.appendingPathComponent("package.opf"), atomically: true, encoding: .utf8)
+
+        DispatchQueue.main.async {
+            self.exportStatusText = "Assembling EPUB Package..."
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.currentDirectoryURL = tempDir
+        process.arguments = ["-X0", targetURL.path, "mimetype"]
+        try? process.run()
+        process.waitUntilExit()
+
+        let process2 = Process()
+        process2.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process2.currentDirectoryURL = tempDir
+        process2.arguments = ["-rg", targetURL.path, "META-INF", "OPS"]
+        try? process2.run()
+        process2.waitUntilExit()
+
+        try? FileManager.default.removeItem(at: tempDir)
+
+        DispatchQueue.main.async {
+            self.isExporting = false
+            self.isExportModalPresented = false
+            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+        }
+    }
+
+    private func performTIFFConversion(engine: DjVuEngine, startPage: Int, endPage: Int, scale: Double, targetURL: URL, total: Int) {
+        var reps: [NSImageRep] = []
+
+        for (idx, pIdx) in (startPage...endPage).enumerated() {
+            let currentPct = Double(idx + 1) / Double(total)
+            DispatchQueue.main.async {
+                self.exportProgress = currentPct
+                self.exportStatusText = "Rendering Page \(pIdx + 1) of \(endPage + 1) for TIFF..."
+            }
+
+            let (dw, dh, _) = engine.getPageDimension(pageIndex: pIdx) ?? (600, 800, 72)
+            let w = Int(Double(dw) * scale)
+            let h = Int(Double(dh) * scale)
+            let byteCount = w * h * 4
+            var buffer = [UInt8](repeating: 0, count: byteCount)
+
+            let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
+                guard let base = ptr.baseAddress else { return -1 }
+                return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pIdx), UInt32(w), UInt32(h), UInt32(self.layerMode.rawValue), base)
+            }
+
+            if res == 0 {
+                let data = Data(buffer)
+                if let rep = NSBitmapImageRep(
+                    bitmapDataPlanes: nil,
+                    pixelsWide: w,
+                    pixelsHigh: h,
+                    bitsPerSample: 8,
+                    samplesPerPixel: 4,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: .calibratedRGB,
+                    bytesPerRow: w * 4,
+                    bitsPerPixel: 32
+                ) {
+                    data.withUnsafeBytes { rawBuffer in
+                        if let base = rawBuffer.baseAddress, let bitmapData = rep.bitmapData {
+                            memcpy(bitmapData, base, byteCount)
+                        }
+                    }
+                    reps.append(rep)
+                }
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.exportStatusText = "Encoding Multi-Page TIFF Image..."
+        }
+
+        if let tiffData = NSBitmapImageRep.tiffRepresentationOfImageReps(in: reps, using: .lzw, factor: 0.9) {
+            try? tiffData.write(to: targetURL)
+        }
+
+        DispatchQueue.main.async {
+            self.isExporting = false
+            self.isExportModalPresented = false
+            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+        }
+    }
+
+    private func performPNGFolderConversion(engine: DjVuEngine, startPage: Int, endPage: Int, scale: Double, targetURL: URL, total: Int) {
+        try? FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+
+        for (idx, pIdx) in (startPage...endPage).enumerated() {
+            let currentPct = Double(idx + 1) / Double(total)
+            DispatchQueue.main.async {
+                self.exportProgress = currentPct
+                self.exportStatusText = "Exporting PNG Page \(pIdx + 1) of \(endPage + 1)..."
+            }
+
+            let fileName = String(format: "Page_%04d.png", pIdx + 1)
+            let pageURL = targetURL.appendingPathComponent(fileName)
+
+            if let imgData = renderPageToImageData(engine: engine, pageIndex: pIdx, scale: scale, format: .png) {
+                try? imgData.write(to: pageURL)
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.isExporting = false
+            self.isExportModalPresented = false
+            NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+        }
+    }
+
+    private func renderPageToNSImage(engine: DjVuEngine, pageIndex: Int, scale: Double) -> NSImage? {
+        let (dw, dh, _) = engine.getPageDimension(pageIndex: pageIndex) ?? (600, 800, 72)
+        let w = Int(Double(dw) * scale)
+        let h = Int(Double(dh) * scale)
+        let byteCount = w * h * 4
+        var buffer = [UInt8](repeating: 0, count: byteCount)
+
+        let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
+            guard let base = ptr.baseAddress else { return -1 }
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+        }
+        guard res == 0 else { return nil }
+
+        let data = Data(buffer)
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+
+        guard let cgImage = CGImage(
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: w * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        ) else { return nil }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+    }
+
+    private func renderPageToImageData(engine: DjVuEngine, pageIndex: Int, scale: Double, format: NSBitmapImageRep.FileType) -> Data? {
+        let (dw, dh, _) = engine.getPageDimension(pageIndex: pageIndex) ?? (600, 800, 72)
+        let w = Int(Double(dw) * scale)
+        let h = Int(Double(dh) * scale)
+        let byteCount = w * h * 4
+        var buffer = [UInt8](repeating: 0, count: byteCount)
+
+        let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
+            guard let base = ptr.baseAddress else { return -1 }
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+        }
+        guard res == 0 else { return nil }
+
+        let data = Data(buffer)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: w,
+            pixelsHigh: h,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .calibratedRGB,
+            bytesPerRow: w * 4,
+            bitsPerPixel: 32
+        ) else { return nil }
+
+        data.withUnsafeBytes { rawBuffer in
+            if let base = rawBuffer.baseAddress, let bitmapData = rep.bitmapData {
+                memcpy(bitmapData, base, byteCount)
+            }
+        }
+
+        let props: [NSBitmapImageRep.PropertyKey: Any] = (format == .jpeg) ? [.compressionFactor: 0.9] : [:]
+        return rep.representation(using: format, properties: props)
+    }
+
+    private func extractText(from zones: [TextZone]) -> String {
+        var text = ""
+        for zone in zones {
+            if !zone.text.isEmpty {
+                text += zone.text + " "
+            }
+            if !zone.children.isEmpty {
+                text += extractText(from: zone.children)
+            }
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func loadTextLayer(pageIndex: Int) {
