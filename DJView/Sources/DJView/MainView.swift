@@ -175,6 +175,13 @@ public struct MainView: View {
                 // Cmd+E: Open Document Conversion Modal
                 Button(action: { viewModel.isExportModalPresented = true }) { EmptyView() }.keyboardShortcut("e", modifiers: [.command, .shift])
 
+                // Cmd+Shift+S: Toggle Sidebar
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        viewModel.isSidebarVisible.toggle()
+                    }
+                }) { EmptyView() }.keyboardShortcut("s", modifiers: [.command, .shift])
+
                 // Cmd+,: Open Settings
                 Button(action: { isSettingsSheetPresented = true }) { EmptyView() }.keyboardShortcut(",", modifiers: .command)
 
@@ -1051,6 +1058,18 @@ struct CustomToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
+            // Fixed sidebar toggle — always present, never shifts
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    viewModel.isSidebarVisible.toggle()
+                }
+            }) {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 15, weight: .medium))
+                    .symbolVariant(viewModel.isSidebarVisible ? .fill : .none)
+            }
+            .help("Toggle Sidebar (Cmd+Shift+S)")
+
             Button(action: onOpenDocument) {
                 Image(systemName: "folder")
                     .font(.system(size: 15, weight: .medium))
