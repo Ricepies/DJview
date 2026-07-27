@@ -3,7 +3,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use serde::Serialize;
 use djvu_rs::{Document, TextZoneKind};
-use djvu_rs::djvu_encode::PageEncoder;
+use djvu_rs::djvu_encode::{PageEncoder, EncodeQuality};
 
 pub struct DjVuDocContext {
     doc: Document,
@@ -367,7 +367,9 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
         data: slice.to_vec(),
     };
 
-    let encoder = PageEncoder::from_pixmap(&pixmap).with_dpi(if dpi == 0 { 300 } else { dpi });
+    let encoder = PageEncoder::from_pixmap(&pixmap)
+        .with_dpi(if dpi == 0 { 300 } else { dpi })
+        .with_quality(EncodeQuality::Photo);
 
     let djvu_bytes = match encoder.encode() {
         Ok(b) => b,
@@ -380,7 +382,7 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
     }
 }
 
-// MARK: - Streaming Multi-Page DjVu Encoder Engine with djvm::merge
+// MARK: - Streaming Multi-Page DjVu Encoder Engine with djvm::merge & Photo IW44 Encoding
 #[no_mangle]
 pub unsafe extern "C" fn djvu_encoder_create(dpi: u16) -> *mut DjVuMultiPageEncoder {
     Box::into_raw(Box::new(DjVuMultiPageEncoder {
@@ -414,7 +416,9 @@ pub unsafe extern "C" fn djvu_encoder_add_png_page(
         data: rgba_img.into_raw(),
     };
 
-    let enc = PageEncoder::from_pixmap(&pixmap).with_dpi((*encoder).dpi);
+    let enc = PageEncoder::from_pixmap(&pixmap)
+        .with_dpi((*encoder).dpi)
+        .with_quality(EncodeQuality::Photo);
 
     let single_page_djvu = match enc.encode() {
         Ok(bytes) => bytes,
