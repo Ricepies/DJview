@@ -25,6 +25,10 @@ mkdir -p "$RESOURCES_DIR"
 cp "$PROJECT_ROOT/DJView/.build/release/DJView" "$MACOS_DIR/DJView"
 chmod +x "$MACOS_DIR/DJView"
 
+if [ -f "$PROJECT_ROOT/aaa.icns" ]; then
+    cp "$PROJECT_ROOT/aaa.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+
 cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -32,6 +36,8 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
 <dict>
     <key>CFBundleExecutable</key>
     <string>DJView</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>org.djview.DJView</string>
     <key>CFBundleName</key>
