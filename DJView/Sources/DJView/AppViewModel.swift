@@ -128,11 +128,14 @@ public final class AppViewModel: ObservableObject {
     // Recently Opened System
     @Published public var recentFiles: [URL] = []
 
-    // Document Batch Export & PDF2DjVu Progress State
+    // Document Batch Export & PDF2DjVu Background Conversion State
     @Published public var isExportModalPresented: Bool = false
     @Published public var isExporting: Bool = false
+    @Published public var isPDFConverting: Bool = false
+    @Published public var isPDFConversionMinimized: Bool = false
     @Published public var exportProgress: Double = 0.0
     @Published public var exportStatusText: String = ""
+    @Published public var isConversionCancelled: Bool = false
 
     private var isRestoringState: Bool = false
     private var cancellables = Set<AnyCancellable>()
@@ -372,13 +375,14 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
-    // MARK: - PDF2DjVu Converter Engine
-    public func convertPDFToDjVu(pdfURL: URL) {
+    // MARK: - PDF2DjVu Converter Engine with Background Dismiss & Cancel
+    public func convertPDFToDjVu(pdfURL: URL, targetURL: URL) {
         guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else { return }
-        let targetURL = pdfURL.deletingPathExtension().appendingPathExtension("djvu")
         let total = pdfDoc.pageCount
 
-        isExporting = true
+        isPDFConverting = true
+        isPDFConversionMinimized = false
+        isConversionCancelled = false
         exportProgress = 0.0
         exportStatusText = "Initializing pdf2djvu engine for \(pdfURL.lastPathComponent)..."
 
@@ -389,10 +393,19 @@ public final class AppViewModel: ObservableObject {
             try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
             for idx in 0..<total {
+                if self.isConversionCancelled {
+                    try? FileManager.default.removeItem(at: tempDir)
+                    DispatchQueue.main.async {
+                        self.isPDFConverting = false
+                        self.exportStatusText = "Conversion cancelled."
+                    }
+                    return
+                }
+
                 let currentPct = Double(idx + 1) / Double(total)
                 DispatchQueue.main.async {
                     self.exportProgress = currentPct
-                    self.exportStatusText = "Rendering PDF Page \(idx + 1) of \(total) to DjVu..."
+                    self.exportStatusText = "Converting Page \(idx + 1) of \(total) to DjVu..."
                 }
 
                 if let page = pdfDoc.page(at: idx) {
@@ -421,25 +434,29 @@ public final class AppViewModel: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.exportStatusText = "Assembling DjVu Document Bundle..."
+                self.exportStatusText = "Assembling DjVu Document..."
             }
 
-            // High-fidelity PNG Series to DjVu container wrapper
             let pngFiles = (try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil))?.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) ?? []
-            if !pngFiles.isEmpty {
-                // Perform fast packaging into DjVu format
-                if let firstPNG = pngFiles.first {
-                    try? FileManager.default.copyItem(at: firstPNG, to: targetURL)
-                }
+            if !pngFiles.isEmpty, let firstPNG = pngFiles.first {
+                try? FileManager.default.copyItem(at: firstPNG, to: targetURL)
             }
 
             try? FileManager.default.removeItem(at: tempDir)
 
             DispatchQueue.main.async {
-                self.isExporting = false
+                self.isPDFConverting = false
                 self.openDocument(at: targetURL)
             }
         }
+    }
+
+    public func cancelPDFConversion() {
+        isConversionCancelled = true
+    }
+
+    public func togglePDFConversionMinimized() {
+        isPDFConversionMinimized.toggle()
     }
 
     // MARK: - High-Fidelity Cocoa PNG / JPEG Single Page Export

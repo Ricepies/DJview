@@ -16,6 +16,12 @@ public struct MainView: View {
             }
         } detail: {
             VStack(spacing: 0) {
+                // PDF2DjVu Conversion Status Bar (Full Top Banner)
+                if viewModel.isPDFConverting && !viewModel.isPDFConversionMinimized {
+                    PDFConversionTopStatusBar(viewModel: viewModel)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 // Expandable Page Note Taking Drawer (Activated & Closed by Top Note Button)
                 if viewModel.isNoteTakingActive {
                     PageNoteTopDrawer(viewModel: viewModel)
@@ -63,6 +69,18 @@ public struct MainView: View {
                         }
                     }
 
+                    // Non-Intrusive Floating Background Task Pill (When Minimized)
+                    if viewModel.isPDFConverting && viewModel.isPDFConversionMinimized {
+                        HStack {
+                            PDFConversionMinimizedPill(viewModel: viewModel)
+                                .padding(.leading, 18)
+                                .padding(.bottom, 20)
+                            Spacer()
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(150)
+                    }
+
                     // Sleek Floating Canvas Control Pill (Bottom-Center HUD)
                     if viewModel.engine != nil {
                         CanvasFloatingHUD(viewModel: viewModel)
@@ -73,6 +91,8 @@ public struct MainView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: viewModel.isNoteTakingActive)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isPDFConverting)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isPDFConversionMinimized)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isSidebarVisible)
             .animation(.easeInOut(duration: 0.18), value: viewModel.isSearchPopupVisible)
             .toolbar {
@@ -101,7 +121,7 @@ public struct MainView: View {
                         }
                     } else if ext == "pdf" {
                         DispatchQueue.main.async {
-                            viewModel.convertPDFToDjVu(pdfURL: url)
+                            promptSaveAndConvertPDF(pdfURL: url)
                         }
                     }
                 }
@@ -176,6 +196,8 @@ public struct MainView: View {
 
     private func selectAndOpenDocument() {
         let panel = NSOpenPanel()
+        panel.title = "Open DjVu Document"
+        panel.message = "Choose a DjVu file (.djvu, .djv) to read"
         panel.allowedContentTypes = [
             UTType(filenameExtension: "djvu") ?? .data,
             UTType(filenameExtension: "djv") ?? .data
@@ -188,16 +210,129 @@ public struct MainView: View {
         }
     }
 
+    // MARK: - Explicit PDF Selection & Explicit Save Location Prompts
     private func selectAndConvertPDF() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.prompt = "Convert PDF to DjVu"
+        let openPanel = NSOpenPanel()
+        openPanel.title = "Select PDF Document to Convert"
+        openPanel.message = "Choose a PDF file (.pdf) to convert into DjVu format"
+        openPanel.allowedContentTypes = [.pdf]
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = false
+        openPanel.prompt = "Select PDF Document"
 
-        if panel.runModal() == .OK, let url = panel.url {
-            viewModel.convertPDFToDjVu(pdfURL: url)
+        if openPanel.runModal() == .OK, let pdfURL = openPanel.url {
+            promptSaveAndConvertPDF(pdfURL: pdfURL)
         }
+    }
+
+    private func promptSaveAndConvertPDF(pdfURL: URL) {
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Converted DjVu Document"
+        savePanel.message = "Choose destination location and filename for the converted DjVu document"
+        savePanel.nameFieldStringValue = pdfURL.deletingPathExtension().lastPathComponent + ".djvu"
+        savePanel.directoryURL = pdfURL.deletingLastPathComponent()
+        savePanel.prompt = "Save DjVu File"
+
+        if savePanel.runModal() == .OK, let targetURL = savePanel.url {
+            viewModel.convertPDFToDjVu(pdfURL: pdfURL, targetURL: targetURL)
+        }
+    }
+}
+
+// MARK: - Full Top Status Bar for PDF2DjVu Conversion
+struct PDFConversionTopStatusBar: View {
+    @ObservedObject var viewModel: AppViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                ProgressView(value: viewModel.exportProgress)
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: 180)
+
+                Text(viewModel.exportStatusText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text("\(Int(viewModel.exportProgress * 100))%")
+                    .font(.system(size: 13, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(.accentColor)
+
+                Spacer()
+
+                // Minimize to Background Task Button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.togglePDFConversionMinimized()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.down.square.fill")
+                            .font(.system(size: 13))
+                        Text("Run in Background")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss status bar into background task")
+
+                // Cancel Conversion Button
+                Button(action: {
+                    viewModel.cancelPDFConversion()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Cancel Conversion")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+        }
+    }
+}
+
+// MARK: - Non-Intrusive Floating Background Task Pill
+struct PDFConversionMinimizedPill: View {
+    @ObservedObject var viewModel: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .scaleEffect(0.7)
+                .frame(width: 16, height: 16)
+
+            Text("Converting PDF: \(Int(viewModel.exportProgress * 100))%")
+                .font(.system(size: 12, weight: .semibold))
+                .monospacedDigit()
+
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.togglePDFConversionMinimized()
+                }
+            }) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.accentColor)
+            }
+            .buttonStyle(.plain)
+            .help("Expand status bar")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
+        .overlay(
+            Capsule()
+                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+        )
     }
 }
 
