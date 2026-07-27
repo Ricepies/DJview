@@ -183,7 +183,6 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -1,
     };
 
-    // Render page at native 100% resolution to bypass djvu-rs's broken render_to_size downsampler on JB2/IW44 pages
     let pixmap_res = match layer_mode {
         3 => {
             if let Ok(Some(bitmap)) = page.decode_mask() {
@@ -218,7 +217,6 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -2,
     };
 
-    // Resample native 100% render in Rust memory using imageops::resize if target dimensions are requested
     let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || pixmap.height != target_height) {
         let (pw, ph) = (pixmap.width, pixmap.height);
         if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
