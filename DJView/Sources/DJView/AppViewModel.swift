@@ -375,7 +375,7 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
-    // MARK: - PDF2DjVu Converter Engine with Native DjVu IW44/JB2 Encoder
+    // MARK: - PDF2DjVu Multi-Page Bundled Converter Engine
     public func convertPDFToDjVu(pdfURL: URL, targetURL: URL) {
         guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else { return }
         let total = pdfDoc.pageCount
@@ -389,6 +389,10 @@ public final class AppViewModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
+            var pageBuffers: [Data] = []
+            var widths: [UInt32] = []
+            var heights: [UInt32] = []
+
             for idx in 0..<total {
                 if self.isConversionCancelled {
                     DispatchQueue.main.async {
@@ -400,47 +404,93 @@ public final class AppViewModel: ObservableObject {
 
                 let currentPct = Double(idx + 1) / Double(total)
                 DispatchQueue.main.async {
-                    self.exportProgress = currentPct
-                    self.exportStatusText = "Encoding PDF Page \(idx + 1) of \(total) to DjVu..."
+                    self.exportProgress = currentPct * 0.8
+                    self.exportStatusText = "Rendering PDF Page \(idx + 1) of \(total)..."
                 }
 
-                if let page = pdfDoc.page(at: idx) {
-                    let bounds = page.bounds(for: .mediaBox)
-                    let scale: CGFloat = 2.0
-                    let targetW = Int(bounds.width * scale)
-                    let targetH = Int(bounds.height * scale)
+                if let page = pdfDoc.page(at: idx),
+                   let (data, w, h) = self.renderPDFPageToRGBABitmap(page: page, scale: 2.0) {
+                    pageBuffers.append(data)
+                    widths.append(UInt32(w))
+                    heights.append(UInt32(h))
+                }
+            }
 
-                    let byteCount = targetW * targetH * 4
-                    var buffer = [UInt8](repeating: 0, count: byteCount)
+            if self.isConversionCancelled { return }
 
-                    let colorSpace = CGColorSpaceCreateDeviceRGB()
-                    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+            DispatchQueue.main.async {
+                self.exportProgress = 0.85
+                self.exportStatusText = "Encoding \(total) pages into multi-page DjVu bundle with thumbnails..."
+            }
 
-                    if let ctx = CGContext(
-                        data: &buffer,
-                        width: targetW,
-                        height: targetH,
-                        bitsPerComponent: 8,
-                        bytesPerRow: targetW * 4,
-                        space: colorSpace,
-                        bitmapInfo: bitmapInfo.rawValue
-                    ) {
-                        ctx.setFillColor(NSColor.white.cgColor)
-                        ctx.fill(CGRect(x: 0, y: 0, width: CGFloat(targetW), height: CGFloat(targetH)))
-                        ctx.scaleBy(x: scale, y: scale)
-                        page.draw(with: .mediaBox, to: ctx)
+            var pointers: [UnsafePointer<UInt8>?] = []
+            for data in pageBuffers {
+                data.withUnsafeBytes { ptr in
+                    pointers.append(ptr.baseAddress?.assumingMemoryBound(to: UInt8.self))
+                }
+            }
 
-                        let res = djvu_encode_rgba_to_djvu(buffer, UInt32(targetW), UInt32(targetH), 300, targetURL.path)
-                        print("Encoded PDF Page \(idx + 1) to DjVu with result status code: \(res)")
+            let res = pointers.withUnsafeBufferPointer { ptrsBuffer -> Int32 in
+                guard let basePtrs = ptrsBuffer.baseAddress else { return -1 }
+                return widths.withUnsafeBufferPointer { wBuf in
+                    guard let baseW = wBuf.baseAddress else { return -1 }
+                    return heights.withUnsafeBufferPointer { hBuf in
+                        guard let baseH = hBuf.baseAddress else { return -1 }
+                        return djvu_encode_multipage_rgba_to_djvu(basePtrs, baseW, baseH, UInt32(total), 300, targetURL.path)
                     }
                 }
             }
 
+            print("Multi-page DjVu encoding result code: \(res)")
+
             DispatchQueue.main.async {
+                self.exportProgress = 1.0
                 self.isPDFConverting = false
                 self.openDocument(at: targetURL)
             }
         }
+    }
+
+    private func renderPDFPageToRGBABitmap(page: PDFPage, scale: CGFloat = 2.0) -> (data: Data, width: Int, height: Int)? {
+        let bounds = page.bounds(for: .mediaBox)
+        let w = Int(bounds.width * scale)
+        let h = Int(bounds.height * scale)
+
+        let img = NSImage(size: NSSize(width: w, height: h))
+        img.lockFocus()
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            ctx.setFillColor(NSColor.white.cgColor)
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.scaleBy(x: scale, y: scale)
+            page.draw(with: .mediaBox, to: ctx)
+        }
+        img.unlockFocus()
+
+        guard let tiffData = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiffData),
+              let cgImage = rep.cgImage else {
+            return nil
+        }
+
+        let byteCount = w * h * 4
+        var buffer = [UInt8](repeating: 0, count: byteCount)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+
+        guard let context = CGContext(
+            data: &buffer,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return nil
+        }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return (Data(buffer), w, h)
     }
 
     public func cancelPDFConversion() {

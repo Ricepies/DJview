@@ -376,6 +376,68 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn djvu_encode_multipage_rgba_to_djvu(
+    rgba_ptrs: *const *const u8,
+    widths: *const u32,
+    heights: *const u32,
+    page_count: u32,
+    dpi: u16,
+    out_path: *const c_char,
+) -> i32 {
+    if rgba_ptrs.is_null() || widths.is_null() || heights.is_null() || out_path.is_null() || page_count == 0 {
+        return -1;
+    }
+
+    let path_str = match CStr::from_ptr(out_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let count = page_count as usize;
+    let ptrs_slice = std::slice::from_raw_parts(rgba_ptrs, count);
+    let widths_slice = std::slice::from_raw_parts(widths, count);
+    let heights_slice = std::slice::from_raw_parts(heights, count);
+
+    let mut pixmaps = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let w = widths_slice[i];
+        let h = heights_slice[i];
+        let p_ptr = ptrs_slice[i];
+
+        if p_ptr.is_null() || w == 0 || h == 0 {
+            return -2;
+        }
+
+        let len = (w * h * 4) as usize;
+        let slice = std::slice::from_raw_parts(p_ptr, len);
+
+        pixmaps.push(djvu_rs::Pixmap {
+            width: w,
+            height: h,
+            data: slice.to_vec(),
+        });
+    }
+
+    let djvu_bytes = match djvu_rs::djvu_encode::encode_djvm_layered_shared_with_thumbnails(
+        &pixmaps,
+        djvu_rs::djvu_encode::EncodeQuality::Quality,
+        if dpi == 0 { 300 } else { dpi },
+        None,
+        5,
+        true,
+    ) {
+        Ok(b) => b,
+        Err(_) => return -3,
+    };
+
+    match std::fs::write(path_str, djvu_bytes) {
+        Ok(_) => 0,
+        Err(_) => -4,
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn djvu_string_free(ptr: *mut c_char) {
     if !ptr.is_null() {
         drop(CString::from_raw(ptr));
