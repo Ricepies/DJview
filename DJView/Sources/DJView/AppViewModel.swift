@@ -574,6 +574,9 @@ public final class AppViewModel: ObservableObject {
         let total = max(1, endPage - startPage + 1)
 
         isExporting = true
+        isPDFConverting = true
+        isPDFConversionMinimized = true
+        isExportModalPresented = false
         exportProgress = 0.0
         exportStatusText = "Preparing conversion for \(format.rawValue)..."
 
@@ -623,8 +626,11 @@ public final class AppViewModel: ObservableObject {
 
         DispatchQueue.main.async {
             self.isExporting = false
+            self.isPDFConverting = false
+            self.isPDFConversionMinimized = false
             self.isExportModalPresented = false
             if success {
+                NSSound.beep()
                 NSWorkspace.shared.activateFileViewerSelecting([targetURL])
             }
         }

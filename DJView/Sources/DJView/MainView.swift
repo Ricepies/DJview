@@ -304,7 +304,7 @@ struct PDFConversionMinimizedPill: View {
                 .scaleEffect(0.7)
                 .frame(width: 16, height: 16)
 
-            Text("Converting PDF: \(Int(viewModel.exportProgress * 100))%")
+            Text("\(viewModel.exportStatusText) (\(Int(viewModel.exportProgress * 100))%)")
                 .font(.system(size: 12, weight: .semibold))
                 .monospacedDigit()
 
