@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 @main
-struct DJViewApp: App {
+struct DejaApp: App {
     @StateObject private var tabManager = TabManager()
 
     var body: some Scene {

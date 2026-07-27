@@ -1,17 +1,17 @@
-# DJView — Agentic Handover & Architecture Document
+# Deja — Agentic Handover & Architecture Document
 
-This document provides a complete technical state, design decisions, FFI safety rules, and roadmap for AI coding agents and human developers maintaining **DJView**.
+This document provides a complete technical state, design decisions, FFI safety rules, and roadmap for AI coding agents and human developers maintaining **Deja**.
 
 ---
 
 ## 1. Executive Summary
 
-- **Project Name**: DJView
+- **Project Name**: Deja
 - **Target OS**: macOS 14.0 (Sonoma) or newer
 - **Core Stack**: Pure Rust (`djvu-rs` + custom C FFI bridge) + Swift 5.9 / SwiftUI / AppKit / Metal GPU
 - **Build System**: Bash scripts (`./scripts/build.sh`, `./scripts/create_dmg.sh`) wrapping `cargo` & `swift build`
-- **Repository**: [https://github.com/YOUR_USERNAME/djview](https://github.com/YOUR_USERNAME/djview)
-- **License**: DJView Strong Copyleft License v1.0 (AGPL v3 + anti-Red Hat loophole clause)
+- **Repository**: [https://github.com/YOUR_USERNAME/deja](https://github.com/YOUR_USERNAME/deja)
+- **License**: Deja Strong Copyleft License v1.0 (AGPL v3 + anti-Red Hat loophole clause)
 
 ---
 

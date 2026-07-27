@@ -5,12 +5,12 @@ set -e
 # Compiles Rust djvu-bridge static library, builds Swift DJView executable, packages DJView.app, and creates DJView.dmg installer.
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="DJView"
-APP_BUNDLE="$PROJECT_DIR/DJView.app"
+APP_NAME="Deja"
+APP_BUNDLE="$PROJECT_DIR/Deja.app"
 GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
 VERSION="${VERSION:-${GIT_TAG:-0.1.0}}"
-DMG_NAME="DJView.dmg"
-VERSIONED_DMG_NAME="DJView-v${VERSION}.dmg"
+DMG_NAME="Deja.dmg"
+VERSIONED_DMG_NAME="Deja-v${VERSION}.dmg"
 DMG_PATH="$PROJECT_DIR/$DMG_NAME"
 VERSIONED_DMG_PATH="$PROJECT_DIR/$VERSIONED_DMG_NAME"
 STAGING_DIR="$PROJECT_DIR/target/dmg_staging"

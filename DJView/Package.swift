@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "DJView",
+    name: "Deja",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "DJView", targets: ["DJView"])
+        .executable(name: "Deja", targets: ["Deja"])
     ],
     targets: [
         .target(
@@ -16,7 +16,7 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .executableTarget(
-            name: "DJView",
+            name: "Deja",
             dependencies: ["CDjVuBridge"],
             path: "Sources/DJView",
             linkerSettings: [

@@ -1,10 +1,10 @@
-# DJView — Native macOS DjVu Reader
+# Deja — Native macOS DjVu Reader
 
 <p align="center">
-  <img src="docs/screenshots/startup.png" width="560" alt="DJView startup screen" />
+  <img src="docs/screenshots/startup.png" width="560" alt="Deja startup screen" />
 </p>
 
-**DJView** is a high-performance, fully native macOS DjVu document viewer built with a **pure Rust core** and a **SwiftUI + Metal** frontend. It renders DjVu documents faster than any cross-platform solution, with zero dependency on DjVuLibre or any C/C++ runtime.
+**Deja** is a high-performance, fully native macOS DjVu document viewer built with a **pure Rust core** and a **SwiftUI + Metal** frontend. It renders DjVu documents faster than any cross-platform solution, with zero dependency on DjVuLibre or any C/C++ runtime.
 
 > **macOS 14 Sonoma or later required.**
 
@@ -43,9 +43,9 @@
 
 ## Download
 
-**[⬇ Download DJView.dmg](https://github.com/YOUR_USERNAME/djview/releases/latest)**
+**[⬇ Download Deja.dmg](https://github.com/YOUR_USERNAME/deja/releases/latest)**
 
-Drag `DJView.app` into `/Applications` to install. No additional runtime required.
+Drag `Deja.app` into `/Applications` to install. No additional runtime required.
 
 ---
 
@@ -65,17 +65,17 @@ Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 ### Build
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/djview.git
-cd djview
+git clone https://github.com/YOUR_USERNAME/deja.git
+cd deja
 ./scripts/build.sh
-open DJView.app
+open Deja.app
 ```
 
 ### Release DMG
 
 ```bash
 ./scripts/create_dmg.sh
-# → DJView.dmg
+# → Deja.dmg
 ```
 
 ---
@@ -83,7 +83,7 @@ open DJView.app
 ## Architecture
 
 ```
-djview/
+deja/
 ├── djvu-bridge/          # Rust static library (C FFI over djvu-rs)
 │   ├── src/lib.rs        # FFI surface — decode, render, search, export
 │   └── include/          # C header for Swift bridging
@@ -135,7 +135,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-**DJView Strong Copyleft License v1.0** — see [LICENSE](LICENSE).
+**Deja Strong Copyleft License v1.0** — see [LICENSE](LICENSE).
 
 All Derivative Works must remain open source under the same license.
 No trademark, subscription, or other legal mechanism may be used to restrict

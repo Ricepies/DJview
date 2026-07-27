@@ -19,7 +19,7 @@ djvu-bridge/target/
 target/
 
 # App bundle (built by scripts/build.sh, not committed)
-DJView.app/
+*.app/
 
 # DMG releases (published via GitHub Releases, not committed)
 *.dmg

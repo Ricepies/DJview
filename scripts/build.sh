@@ -16,8 +16,8 @@ GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
 VERSION="${VERSION:-${GIT_TAG:-0.1.0}}"
 BUILD_NUM="${BUILD_NUM:-$(git rev-list --count HEAD 2>/dev/null || echo "1")}"
 
-echo "=== 3. Packaging macOS DJView.app Bundle (v${VERSION} build ${BUILD_NUM}) ==="
-APP_BUNDLE="$PROJECT_ROOT/DJView.app"
+echo "=== 3. Packaging macOS Deja.app Bundle (v${VERSION} build ${BUILD_NUM}) ==="
+APP_BUNDLE="$PROJECT_ROOT/Deja.app"
 CONTENTS_DIR="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
@@ -26,8 +26,8 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
-cp "$PROJECT_ROOT/DJView/.build/release/DJView" "$MACOS_DIR/DJView"
-chmod +x "$MACOS_DIR/DJView"
+cp "$PROJECT_ROOT/DJView/.build/release/Deja" "$MACOS_DIR/Deja"
+chmod +x "$MACOS_DIR/Deja"
 
 if [ -f "$PROJECT_ROOT/ccc.icns" ]; then
     cp "$PROJECT_ROOT/ccc.icns" "$RESOURCES_DIR/AppIcon.icns"
@@ -41,15 +41,15 @@ cat << EOF > "$CONTENTS_DIR/Info.plist"
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>DJView</string>
+    <string>Deja</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>org.djview.DJView</string>
+    <string>org.deja.Deja</string>
     <key>CFBundleName</key>
-    <string>DJView</string>
+    <string>Deja</string>
     <key>CFBundleDisplayName</key>
-    <string>DJView Reader</string>
+    <string>Deja Reader</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -125,8 +125,8 @@ EOF
 
 echo "APPL????" > "$CONTENTS_DIR/PkgInfo"
 
-echo "=== 4. Registering DJView.app with macOS LaunchServices ==="
+echo "=== 4. Registering Deja.app with macOS LaunchServices ==="
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_BUNDLE" || true
 
-echo "=== DJView.app Successfully Built! ==="
+echo "=== Deja.app Successfully Built! ==="
 echo "Path: $APP_BUNDLE"
