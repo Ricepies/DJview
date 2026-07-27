@@ -1,4 +1,38 @@
+# ===== macOS =====
 .DS_Store
-.build
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# ===== Build Artifacts =====
+# Swift Package Manager
+DJView/.build/
+*.o
+*.a
+*.dylib
+
+# Rust / Cargo
+djvu-bridge/target/
 target/
+
+# App bundle (built by scripts/build.sh, not committed)
+DJView.app/
+
+# DMG releases (published via GitHub Releases, not committed)
 *.dmg
+
+# ===== IDE =====
+.swp
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.xcode.env.local
+DerivedData/
+.idea/
+
+# ===== Misc =====
+*.log
+.env

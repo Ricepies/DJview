@@ -1,67 +1,138 @@
-# DJView — Native macOS DjVu Viewer
+# DJView — Native macOS DjVu Reader
 
-**DJView** is a high-performance, native macOS DjVu document viewer inspired by Apple Preview. Built with a pure **Rust core** (`djvu-rs`) and a modern **macOS Swift / SwiftUI / AppKit / Metal** frontend.
+<p align="center">
+  <img src="docs/screenshots/startup.png" width="560" alt="DJView startup screen" />
+</p>
+
+**DJView** is a high-performance, fully native macOS DjVu document viewer built with a **pure Rust core** and a **SwiftUI + Metal** frontend. It renders DjVu documents faster than any cross-platform solution, with zero dependency on DjVuLibre or any C/C++ runtime.
+
+> **macOS 14 Sonoma or later required.**
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/overview.png" width="780" alt="Reading view with thumbnail sidebar" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/file_conversion.png" width="560" alt="Export / conversion dialog" />
+</p>
 
 ---
 
 ## Features
 
-- 📄 **Open DjVu Documents**: Seamless opening, drag-and-drop support, recent files tracking.
-- ⚡ **Metal GPU Acceleration**: Ultra-fast rendering with custom Metal shaders for **Invert (Dark Mode)**, **Sepia**, **Grayscale**, and **High Contrast**.
-- 📜 **Continuous Scrolling View**: Smooth 60/120fps continuous vertical scrolling with lazy rendering.
-- 📖 **Manga Mode**: Right-to-Left dual-page side-by-side reading layout.
-- 🖼️ **Thumbnail Sidebar**: Instant page previews with click-to-jump navigation.
-- 📑 **Table of Contents & Bookmarks**: Parse NAVM outline tree & user custom page bookmarks.
-- 🔍 **OCR Search**: Full-text document search with bounding-box match highlighting on rendered pages.
-- ✂️ **Text Selection & Copy**: Drag mouse over page text layer to select and copy text (`Cmd+C`).
-- 🎨 **Layer Controls**: Switch DjVu layers: **Full Color**, **Foreground**, **Background**, and **Mask/B&W**.
-- ✏️ **Annotations**: Add highlights, sticky notes, and drawing shapes directly on pages.
-- 💾 **Export Page**: Export pages to **PNG** or **JPEG**.
-- 🧠 **Remember Reading Position**: Automatically saves last page, scroll position, and zoom level per document.
+| | |
+|---|---|
+| 📄 **Multi-Tab** | Open multiple documents simultaneously in browser-style tabs (`Cmd+T`) |
+| ⚡ **Metal Rendering** | GPU-accelerated page display via MTKView — 0% idle GPU usage |
+| 📜 **Continuous Scroll** | Smooth vertical scrolling with lazy off-screen prefetch |
+| 📖 **Manga Mode** | Right-to-left dual-page layout for comics and manga |
+| 🔍 **Full-Text Search** | OCR-backed search with bounding-box match highlighting |
+| 🎨 **Layer & Shader Controls** | Switch DjVu layers (Color / FG / BG / Mask) + Metal color shaders (Invert, Sepia, Grayscale, High Contrast) |
+| 🖼️ **Thumbnail Sidebar** | Instant page previews, table of contents, bookmarks, notes, search results |
+| ✏️ **Page Notes** | Multi-note drawer per page, persisted per document |
+| 📑 **Bookmarks** | One-tap page bookmarking (`Cmd+D`), persisted across sessions |
+| 💾 **Export** | Convert whole document to **PDF, EPUB, CBZ, TIFF, or PNG series** in background |
+| 🔁 **PDF → DjVu** | Convert PDF files to DjVu format with JB2 compression |
+| 🧠 **State Persistence** | Remembers last page, zoom, layout, sidebar tab, layer, and shader per document |
 
 ---
 
-## Project Architecture
+## Download
 
-```
-/Users/ricepies/Documents/djview/
-├── ARCHITECTURE.md           # Deep architectural specification
-├── HANDOVER.md               # Agent session handover state & notes
-├── README.md                 # Project README (this file)
-├── TODO.md                   # Completed features checklist
-├── scripts/
-│   └── build.sh              # One-click script building Rust & Swift into DJView.app
-├── djvu-bridge/              # Rust crate wrapping djvu-rs with C FFI
-│   ├── Cargo.toml
-│   ├── include/
-│   │   └── djvu_bridge.h     # C ABI header
-│   └── src/
-│       └── lib.rs            # Thread-safe FFI implementation
-└── DJView/                   # Native macOS Swift/Metal App
-    ├── Package.swift
-    └── Sources/
-        ├── CDjVuBridge/      # C Bridge modulemap & headers
-        └── DJView/           # SwiftUI / AppKit / Metal application
-```
+**[⬇ Download DJView.dmg](https://github.com/YOUR_USERNAME/djview/releases/latest)**
+
+Drag `DJView.app` into `/Applications` to install. No additional runtime required.
 
 ---
 
-## Build Instructions
+## Building from Source
 
 ### Prerequisites
-- macOS 14.0 or newer
-- Xcode 15+ / Swift 5.9+
-- Rust 1.75+ / Cargo
 
-### Quick Build & Package
-Run the automated build script:
+| Tool | Version |
+|---|---|
+| macOS | 14.0 Sonoma or later |
+| Xcode Command Line Tools | 15+ |
+| Swift | 5.9+ |
+| Rust + Cargo | 1.75+ |
+
+Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+
+### Build
+
 ```bash
+git clone https://github.com/YOUR_USERNAME/djview.git
+cd djview
 ./scripts/build.sh
-```
-
-This will build the Rust static library `libdjvu_bridge.a`, compile the Swift executable, and package `DJView.app` bundle in the project root directory.
-
-Launch the app:
-```bash
 open DJView.app
 ```
+
+### Release DMG
+
+```bash
+./scripts/create_dmg.sh
+# → DJView.dmg
+```
+
+---
+
+## Architecture
+
+```
+djview/
+├── djvu-bridge/          # Rust static library (C FFI over djvu-rs)
+│   ├── src/lib.rs        # FFI surface — decode, render, search, export
+│   └── include/          # C header for Swift bridging
+└── DJView/               # Native macOS Swift app
+    └── Sources/DJView/
+        ├── DJViewApp.swift          # App entry, TabManager wiring
+        ├── TabManager.swift         # Multi-tab state
+        ├── TabBarView.swift         # Chrome-style tab bar UI
+        ├── TabbedDocumentView.swift # Root tab container
+        ├── MainView.swift           # Per-tab window layout
+        ├── AppViewModel.swift       # Document state & export logic
+        ├── DjVuEngine.swift         # Swift ↔ Rust FFI bridge + LRU cache
+        ├── CanvasViews.swift        # Continuous / Single / Manga canvas
+        ├── MetalRenderer.swift      # MTKView + Metal shaders
+        ├── MetalPageView.swift      # SwiftUI wrapper for MTKView
+        ├── SidebarViews.swift       # Thumbnail, TOC, bookmarks, search
+        ├── Overlays.swift           # Annotation & text-selection overlay
+        └── Models.swift             # Value types (SearchResult, TextZone…)
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical deep-dive.
+
+---
+
+## Keyboard Shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Open file | `Cmd+O` |
+| New tab | `Cmd+T` |
+| Close tab | `Cmd+W` |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Toggle sidebar | `Cmd+Shift+S` |
+| Search | `Cmd+F` |
+| Bookmark page | `Cmd+D` |
+| Toggle note drawer | `Cmd+Shift+N` |
+| Export / Convert | `Cmd+Shift+E` |
+| Zoom in / out / reset | `Cmd+=` / `Cmd+-` / `Cmd+0` |
+| Layout: Continuous / Single / Manga | `Cmd+1` / `Cmd+2` / `Cmd+3` |
+| Previous / next page | `←` / `→` |
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## License
+
+MIT © 2024 — see [LICENSE](LICENSE).
