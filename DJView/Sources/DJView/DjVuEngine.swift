@@ -113,6 +113,7 @@ public final class DjVuEngine {
     public let docPtr: OpaquePointer
     private let pageCache = LRUCache<String, NSImage>(capacity: 20)
     private let rawDataCache = LRUCache<String, Data>(capacity: 20)
+    private let renderQueue = DispatchQueue(label: "com.djview.renderQueue", qos: .userInitiated)
 
     public var pageCount: Int {
         Int(djvu_doc_page_count(docPtr))
@@ -152,7 +153,7 @@ public final class DjVuEngine {
         }
 
         let ctx = self.docPtr
-        DispatchQueue.global(qos: .userInitiated).async {
+        renderQueue.async {
             guard pageIndex >= 0 && pageIndex < Int(djvu_doc_page_count(ctx)) else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -229,7 +230,7 @@ public final class DjVuEngine {
         }
 
         let ctx = self.docPtr
-        DispatchQueue.global(qos: .userInitiated).async {
+        renderQueue.async {
             guard pageIndex >= 0 && pageIndex < Int(djvu_doc_page_count(ctx)) else {
                 DispatchQueue.main.async { completion(nil, 0, 0) }
                 return

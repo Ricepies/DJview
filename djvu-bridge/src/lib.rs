@@ -2,8 +2,6 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use serde::Serialize;
-use image::imageops::{resize, FilterType};
-use image::RgbaImage;
 use djvu_rs::{Document, TextZoneKind};
 use djvu_rs::djvu_encode::{PageEncoder, EncodeQuality};
 
@@ -189,13 +187,11 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
     let unwind_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let ctx_ref = &mut *ctx;
 
-        // Check if native pixmap for page_idx + layer_mode is already cached in DjVuDocContext
-        let pixmap = if ctx_ref.cached_page_idx == Some(page_idx)
-            && ctx_ref.cached_layer_mode == Some(layer_mode)
-            && ctx_ref.cached_pixmap.is_some()
+        // Decode native DjVu page into cached_pixmap ONLY if cache missed
+        if ctx_ref.cached_page_idx != Some(page_idx)
+            || ctx_ref.cached_layer_mode != Some(layer_mode)
+            || ctx_ref.cached_pixmap.is_none()
         {
-            ctx_ref.cached_pixmap.clone().unwrap()
-        } else {
             let page = match ctx_ref.doc.page(page_idx as usize) {
                 Ok(p) => p,
                 Err(_) => return -1,
@@ -237,41 +233,55 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
 
             ctx_ref.cached_page_idx = Some(page_idx);
             ctx_ref.cached_layer_mode = Some(layer_mode);
-            ctx_ref.cached_pixmap = Some(pm.clone());
-            pm
-        };
+            ctx_ref.cached_pixmap = Some(pm);
+        }
 
-        let actual_ph = if pixmap.width > 0 {
-            (pixmap.data.len() / (pixmap.width as usize * 4)) as u32
-        } else {
-            pixmap.height
-        };
+        // Borrow cached pixmap with ZERO allocations
+        let pm = ctx_ref.cached_pixmap.as_ref().unwrap();
+        let pw = pm.width;
+        let ph = if pw > 0 { (pm.data.len() / (pw as usize * 4)) as u32 } else { pm.height };
 
-        let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || actual_ph != target_height) {
-            let (pw, ph) = (pixmap.width, actual_ph);
-            if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
-                let small_img = resize(&large_img, target_width, target_height, FilterType::Triangle);
-                let (w, h) = small_img.dimensions();
-                (small_img.into_raw(), w, h)
-            } else {
-                (Vec::new(), 0, 0)
+        if target_width > 0 && target_height > 0 && (pw != target_width || ph != target_height) {
+            let tw = target_width as usize;
+            let th = target_height as usize;
+            let out_len = tw * th * 4;
+            let out_slice = std::slice::from_raw_parts_mut(out_buf, out_len);
+
+            let src = &pm.data;
+            let scale_x = (pw as f64) / (target_width as f64);
+            let scale_y = (ph as f64) / (target_height as f64);
+
+            for y in 0..th {
+                let src_y = ((y as f64 * scale_y) as usize).min((ph - 1) as usize);
+                let src_row = src_y * (pw as usize) * 4;
+                let dst_row = y * tw * 4;
+
+                for x in 0..tw {
+                    let src_x = ((x as f64 * scale_x) as usize).min((pw - 1) as usize);
+                    let src_idx = src_row + (src_x * 4);
+                    let dst_idx = dst_row + (x * 4);
+
+                    out_slice[dst_idx..dst_idx + 4].copy_from_slice(&src[src_idx..src_idx + 4]);
+                }
+            }
+
+            if !out_actual_width.is_null() {
+                *out_actual_width = target_width;
+            }
+            if !out_actual_height.is_null() {
+                *out_actual_height = target_height;
             }
         } else {
-            let (w, h) = (pixmap.width, actual_ph);
-            (pixmap.data, w, h)
-        };
-
-        if !out_actual_width.is_null() {
-            *out_actual_width = final_w;
-        }
-        if !out_actual_height.is_null() {
-            *out_actual_height = final_h;
-        }
-
-        let copy_len = final_data.len();
-        if copy_len > 0 {
+            let copy_len = pm.data.len();
             let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
-            out_slice.copy_from_slice(&final_data);
+            out_slice.copy_from_slice(&pm.data);
+
+            if !out_actual_width.is_null() {
+                *out_actual_width = pw;
+            }
+            if !out_actual_height.is_null() {
+                *out_actual_height = ph;
+            }
         }
 
         0
