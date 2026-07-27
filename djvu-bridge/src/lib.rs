@@ -178,71 +178,89 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         return -1;
     }
 
-    let page = match (*ctx).doc.page(page_idx as usize) {
-        Ok(p) => p,
-        Err(_) => return -1,
-    };
+    let unwind_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let page = match (*ctx).doc.page(page_idx as usize) {
+            Ok(p) => p,
+            Err(_) => return -1,
+        };
 
-    let pixmap_res = match layer_mode {
-        3 => {
-            if let Ok(Some(bitmap)) = page.decode_mask() {
-                let bw = bitmap.width;
-                let bh = bitmap.height;
-                let mut data = vec![0u8; (bw * bh * 4) as usize];
-                for y in 0..bh {
-                    for x in 0..bw {
-                        let bit = bitmap.get(x, y);
-                        let val = if bit { 0u8 } else { 255u8 };
-                        let idx = ((y * bw + x) * 4) as usize;
-                        data[idx] = val;
-                        data[idx + 1] = val;
-                        data[idx + 2] = val;
-                        data[idx + 3] = 255;
+        let pixmap_res = match layer_mode {
+            3 => {
+                if let Ok(Some(bitmap)) = page.decode_mask() {
+                    let bw = bitmap.width;
+                    let bh = bitmap.height;
+                    let mut data = vec![0u8; (bw * bh * 4) as usize];
+                    for y in 0..bh {
+                        for x in 0..bw {
+                            let bit = bitmap.get(x, y);
+                            let val = if bit { 0u8 } else { 255u8 };
+                            let idx = ((y * bw + x) * 4) as usize;
+                            data[idx] = val;
+                            data[idx + 1] = val;
+                            data[idx + 2] = val;
+                            data[idx + 3] = 255;
+                        }
                     }
+                    Ok(djvu_rs::Pixmap {
+                        width: bw,
+                        height: bh,
+                        data,
+                    })
+                } else {
+                    page.render()
                 }
-                Ok(djvu_rs::Pixmap {
-                    width: bw,
-                    height: bh,
-                    data,
-                })
-            } else {
-                page.render()
             }
-        }
-        _ => page.render(),
-    };
+            _ => page.render(),
+        };
 
-    let pixmap = match pixmap_res {
-        Ok(pm) => pm,
-        Err(_) => return -2,
-    };
+        let pixmap = match pixmap_res {
+            Ok(pm) => pm,
+            Err(_) => return -2,
+        };
 
-    let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || pixmap.height != target_height) {
-        let (pw, ph) = (pixmap.width, pixmap.height);
-        if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
-            let small_img = resize(&large_img, target_width, target_height, FilterType::Triangle);
-            let (w, h) = small_img.dimensions();
-            (small_img.into_raw(), w, h)
+        let actual_ph = if pixmap.width > 0 {
+            (pixmap.data.len() / (pixmap.width as usize * 4)) as u32
         } else {
-            (Vec::new(), 0, 0)
+            pixmap.height
+        };
+
+        let (final_data, final_w, final_h) = if target_width > 0 && target_height > 0 && (pixmap.width != target_width || actual_ph != target_height) {
+            let (pw, ph) = (pixmap.width, actual_ph);
+            if let Some(large_img) = RgbaImage::from_raw(pw, ph, pixmap.data) {
+                let small_img = resize(&large_img, target_width, target_height, FilterType::Triangle);
+                let (w, h) = small_img.dimensions();
+                (small_img.into_raw(), w, h)
+            } else {
+                (Vec::new(), 0, 0)
+            }
+        } else {
+            let (w, h) = (pixmap.width, actual_ph);
+            (pixmap.data, w, h)
+        };
+
+        if !out_actual_width.is_null() {
+            *out_actual_width = final_w;
         }
-    } else {
-        let (w, h) = (pixmap.width, pixmap.height);
-        (pixmap.data, w, h)
-    };
+        if !out_actual_height.is_null() {
+            *out_actual_height = final_h;
+        }
 
-    if !out_actual_width.is_null() {
-        *out_actual_width = final_w;
+        let copy_len = final_data.len();
+        if copy_len > 0 {
+            let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
+            out_slice.copy_from_slice(&final_data);
+        }
+
+        0
+    }));
+
+    match unwind_res {
+        Ok(code) => code,
+        Err(_) => {
+            eprintln!("[RUST FFI CATCH] Caught panic in djvu_doc_render_page_rgba!");
+            -999
+        }
     }
-    if !out_actual_height.is_null() {
-        *out_actual_height = final_h;
-    }
-
-    let copy_len = final_data.len();
-    let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
-    out_slice.copy_from_slice(&final_data);
-
-    0
 }
 
 #[no_mangle]
