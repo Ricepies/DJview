@@ -10,8 +10,15 @@ pub struct DjVuDocContext {
 }
 
 pub struct DjVuMultiPageEncoder {
-    page_bytes: Vec<Vec<u8>>,
+    temp_dir: std::path::PathBuf,
+    page_files: Vec<std::path::PathBuf>,
     dpi: u16,
+}
+
+fn generate_temp_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    format!("{:x}", nanos)
 }
 
 #[derive(Serialize)]
@@ -382,9 +389,11 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
         data: slice.to_vec(),
     };
 
+    let quality = djvu_rs::djvu_encode::classify_content(&pixmap);
+
     let single_page_djvu = match PageEncoder::from_pixmap(&pixmap)
         .with_dpi(if dpi == 0 { 300 } else { dpi })
-        .with_quality(EncodeQuality::Quality)
+        .with_quality(quality)
         .encode() {
             Ok(bytes) => bytes,
             Err(_) => match PageEncoder::from_pixmap(&pixmap)
@@ -402,11 +411,17 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
     }
 }
 
-// MARK: - Multi-Layered Quality Encoder Engine with Photo Fallback & djvm::merge
+// MARK: - Production-Grade Streaming Multi-Page DjVu Encoder Engine
 #[no_mangle]
 pub unsafe extern "C" fn djvu_encoder_create(dpi: u16) -> *mut DjVuMultiPageEncoder {
+    let temp_dir = std::env::temp_dir().join(format!("djview_conv_{}", generate_temp_id()));
+    if std::fs::create_dir_all(&temp_dir).is_err() {
+        return ptr::null_mut();
+    }
+
     Box::into_raw(Box::new(DjVuMultiPageEncoder {
-        page_bytes: Vec::new(),
+        temp_dir,
+        page_files: Vec::new(),
         dpi: if dpi == 0 { 300 } else { dpi },
     }))
 }
@@ -421,7 +436,9 @@ pub unsafe extern "C" fn djvu_encoder_add_png_page(
         return -1;
     }
 
+    let enc = &mut *encoder;
     let slice = std::slice::from_raw_parts(png_data, png_len as usize);
+
     let dynamic_img = match image::load_from_memory(slice) {
         Ok(img) => img,
         Err(_) => return -2,
@@ -436,13 +453,16 @@ pub unsafe extern "C" fn djvu_encoder_add_png_page(
         data: rgba_img.into_raw(),
     };
 
+    // Adaptive Content Classification (Bitonal Manga -> JB2 Lossless, Photo -> IW44 Wavelet, Quality -> Multi-layer)
+    let quality = djvu_rs::djvu_encode::classify_content(&pixmap);
+
     let single_page_djvu = match PageEncoder::from_pixmap(&pixmap)
-        .with_dpi((*encoder).dpi)
-        .with_quality(EncodeQuality::Quality)
+        .with_dpi(enc.dpi)
+        .with_quality(quality)
         .encode() {
             Ok(bytes) => bytes,
             Err(_) => match PageEncoder::from_pixmap(&pixmap)
-                .with_dpi((*encoder).dpi)
+                .with_dpi(enc.dpi)
                 .with_quality(EncodeQuality::Photo)
                 .encode() {
                     Ok(bytes) => bytes,
@@ -450,7 +470,14 @@ pub unsafe extern "C" fn djvu_encoder_add_png_page(
                 },
         };
 
-    (*encoder).page_bytes.push(single_page_djvu);
+    let page_filename = format!("p{:05}.djvu", enc.page_files.len() + 1);
+    let page_path = enc.temp_dir.join(&page_filename);
+
+    if std::fs::write(&page_path, &single_page_djvu).is_err() {
+        return -4;
+    }
+
+    enc.page_files.push(page_path);
     0
 }
 
@@ -469,27 +496,52 @@ pub unsafe extern "C" fn djvu_encoder_finish(
         Err(_) => return -1,
     };
 
-    if enc_box.page_bytes.is_empty() {
+    if enc_box.page_files.is_empty() {
+        let _ = std::fs::remove_dir_all(&enc_box.temp_dir);
         return -2;
     }
 
-    let page_refs: Vec<&[u8]> = enc_box.page_bytes.iter().map(|v| v.as_slice()).collect();
+    // Read single-page files from disk
+    let mut page_buffers = Vec::with_capacity(enc_box.page_files.len());
+    for p_path in &enc_box.page_files {
+        match std::fs::read(p_path) {
+            Ok(b) => page_buffers.push(b),
+            Err(_) => {
+                let _ = std::fs::remove_dir_all(&enc_box.temp_dir);
+                return -3;
+            }
+        }
+    }
+
+    let page_refs: Vec<&[u8]> = page_buffers.iter().map(|v| v.as_slice()).collect();
 
     let merged_djvu = match djvu_rs::djvm::merge(&page_refs) {
         Ok(bytes) => bytes,
-        Err(_) => return -3,
+        Err(_) => {
+            let _ = std::fs::remove_dir_all(&enc_box.temp_dir);
+            return -4;
+        }
     };
+
+    // Clean up temporary files from disk
+    let _ = std::fs::remove_dir_all(&enc_box.temp_dir);
+
+    // Validate merged DjVu document structure using djvu-rs parser
+    if djvu_rs::Document::from_bytes(merged_djvu.clone()).is_err() {
+        return -5;
+    }
 
     match std::fs::write(path_str, merged_djvu) {
         Ok(_) => 0,
-        Err(_) => -4,
+        Err(_) => -6,
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn djvu_encoder_free(encoder: *mut DjVuMultiPageEncoder) {
     if !encoder.is_null() {
-        drop(Box::from_raw(encoder));
+        let enc_box = Box::from_raw(encoder);
+        let _ = std::fs::remove_dir_all(&enc_box.temp_dir);
     }
 }
 
