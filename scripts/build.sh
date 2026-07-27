@@ -12,7 +12,11 @@ echo "=== 2. Building Swift DJView Executable ==="
 cd "$PROJECT_ROOT/DJView"
 swift build -c release
 
-echo "=== 3. Packaging macOS DJView.app Bundle ==="
+GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
+VERSION="${VERSION:-${GIT_TAG:-0.1.0}}"
+BUILD_NUM="${BUILD_NUM:-$(git rev-list --count HEAD 2>/dev/null || echo "1")}"
+
+echo "=== 3. Packaging macOS DJView.app Bundle (v${VERSION} build ${BUILD_NUM}) ==="
 APP_BUNDLE="$PROJECT_ROOT/DJView.app"
 CONTENTS_DIR="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -31,7 +35,7 @@ elif [ -f "$PROJECT_ROOT/aaa.icns" ]; then
     cp "$PROJECT_ROOT/aaa.icns" "$RESOURCES_DIR/AppIcon.icns"
 fi
 
-cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
+cat << EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -49,9 +53,9 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${BUILD_NUM}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>

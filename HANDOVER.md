@@ -110,7 +110,22 @@ djview/
 
 ---
 
-## 5. Roadmap & Future Enhancement Recommendations
+## 5. Versioning & Release Naming Conventions
+
+- **Semantic Versioning (SemVer)**: `vMAJOR.MINOR.PATCH` (e.g. `v0.1.0` pre-release, `v1.0.0` stable).
+- **Dynamic Version Derivation**:
+  - `build.sh` automatically reads `git describe --tags --abbrev=0` for `CFBundleShortVersionString` (defaults to `0.1.0` if untagged).
+  - `build.sh` automatically counts git commits (`git rev-list --count HEAD`) for `CFBundleVersion`.
+- **Release Tagging Workflow**:
+  - Create tag: `git tag -a v0.1.0 -m "Release v0.1.0"`
+  - Push tags: `git push origin v0.1.0`
+- **Release Artifact Naming**:
+  - Unversioned installer: `DJView.dmg`
+  - Version-stamped installer: `DJView-v0.1.0.dmg` (generated automatically by `./scripts/create_dmg.sh`).
+
+---
+
+## 6. Roadmap & Future Enhancement Recommendations
 
 1. **Touch Bar Support**: Add page slider and zoom buttons for MacBook Touch Bar.
 2. **Advanced Annotation Tools**: Add freehand ink drawing, text highlight colors, and line shape creation tools.
