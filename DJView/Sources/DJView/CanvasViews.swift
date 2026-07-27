@@ -495,7 +495,8 @@ public struct SinglePageContainerView: View {
         let maxDim: CGFloat = 2048.0
         let scale = min(1.0, maxDim / max(rawW, rawH))
 
-        let targetW = max(1, Int(rawW * scale))
+        let rawTargetW = max(4, Int(rawW * scale))
+        let targetW = (rawTargetW / 4) * 4
         let targetH = max(1, Int(rawH * scale))
 
         if viewModel.useMetalRenderer {

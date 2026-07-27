@@ -170,7 +170,7 @@ struct ThumbnailCell: View {
     }
 
     private func loadThumbnail() {
-        let renderW = Int(width)
+        let renderW = max(4, (Int(width) / 4) * 4)
         let renderH = Int(height)
         engine?.renderPage(pageIndex: pageIndex, targetWidth: renderW, targetHeight: renderH, layerMode: layerMode) { img in
             self.image = img
