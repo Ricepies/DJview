@@ -376,15 +376,14 @@ pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn djvu_encode_multipage_rgba_to_djvu(
-    rgba_ptrs: *const *const u8,
-    widths: *const u32,
-    heights: *const u32,
+pub unsafe extern "C" fn djvu_encode_png_pages_to_djvu(
+    png_data_ptrs: *const *const u8,
+    png_data_lens: *const u32,
     page_count: u32,
     dpi: u16,
     out_path: *const c_char,
 ) -> i32 {
-    if rgba_ptrs.is_null() || widths.is_null() || heights.is_null() || out_path.is_null() || page_count == 0 {
+    if png_data_ptrs.is_null() || png_data_lens.is_null() || out_path.is_null() || page_count == 0 {
         return -1;
     }
 
@@ -394,28 +393,32 @@ pub unsafe extern "C" fn djvu_encode_multipage_rgba_to_djvu(
     };
 
     let count = page_count as usize;
-    let ptrs_slice = std::slice::from_raw_parts(rgba_ptrs, count);
-    let widths_slice = std::slice::from_raw_parts(widths, count);
-    let heights_slice = std::slice::from_raw_parts(heights, count);
+    let ptrs_slice = std::slice::from_raw_parts(png_data_ptrs, count);
+    let lens_slice = std::slice::from_raw_parts(png_data_lens, count);
 
     let mut pixmaps = Vec::with_capacity(count);
 
     for i in 0..count {
-        let w = widths_slice[i];
-        let h = heights_slice[i];
         let p_ptr = ptrs_slice[i];
+        let p_len = lens_slice[i] as usize;
 
-        if p_ptr.is_null() || w == 0 || h == 0 {
+        if p_ptr.is_null() || p_len == 0 {
             return -2;
         }
 
-        let len = (w * h * 4) as usize;
-        let slice = std::slice::from_raw_parts(p_ptr, len);
+        let slice = std::slice::from_raw_parts(p_ptr, p_len);
+        let dynamic_img = match image::load_from_memory(slice) {
+            Ok(img) => img,
+            Err(_) => return -3,
+        };
+
+        let rgba_img = dynamic_img.to_rgba8();
+        let (w, h) = rgba_img.dimensions();
 
         pixmaps.push(djvu_rs::Pixmap {
             width: w,
             height: h,
-            data: slice.to_vec(),
+            data: rgba_img.into_raw(),
         });
     }
 
@@ -428,12 +431,12 @@ pub unsafe extern "C" fn djvu_encode_multipage_rgba_to_djvu(
         true,
     ) {
         Ok(b) => b,
-        Err(_) => return -3,
+        Err(_) => return -4,
     };
 
     match std::fs::write(path_str, djvu_bytes) {
         Ok(_) => 0,
-        Err(_) => -4,
+        Err(_) => -5,
     }
 }
 

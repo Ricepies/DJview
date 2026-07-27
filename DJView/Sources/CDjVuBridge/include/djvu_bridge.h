@@ -20,7 +20,7 @@ char* djvu_doc_get_text_zones_json(DjVuDocContext* ctx, uint32_t page_idx);
 char* djvu_doc_search_text_json(DjVuDocContext* ctx, const char* query);
 int32_t djvu_doc_export_page(DjVuDocContext* ctx, uint32_t page_idx, uint32_t format, const char* out_path);
 int32_t djvu_encode_rgba_to_djvu(const uint8_t* rgba_bytes, uint32_t width, uint32_t height, uint16_t dpi, const char* out_path);
-int32_t djvu_encode_multipage_rgba_to_djvu(const uint8_t* const* rgba_ptrs, const uint32_t* widths, const uint32_t* heights, uint32_t page_count, uint16_t dpi, const char* out_path);
+int32_t djvu_encode_png_pages_to_djvu(const uint8_t* const* png_data_ptrs, const uint32_t* png_data_lens, uint32_t page_count, uint16_t dpi, const char* out_path);
 void djvu_string_free(char* ptr);
 
 #ifdef __cplusplus
