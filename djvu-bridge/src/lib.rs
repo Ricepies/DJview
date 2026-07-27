@@ -3,6 +3,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use serde::Serialize;
 use djvu_rs::{Document, TextZoneKind};
+use djvu_rs::djvu_encode::PageEncoder;
 
 pub struct DjVuDocContext {
     doc: Document,
@@ -333,6 +334,45 @@ pub unsafe extern "C" fn djvu_doc_export_page(
     };
 
     if save_res.is_ok() { 0 } else { -4 }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn djvu_encode_rgba_to_djvu(
+    rgba_bytes: *const u8,
+    width: u32,
+    height: u32,
+    dpi: u16,
+    out_path: *const c_char,
+) -> i32 {
+    if rgba_bytes.is_null() || out_path.is_null() || width == 0 || height == 0 {
+        return -1;
+    }
+
+    let path_str = match CStr::from_ptr(out_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let len = (width * height * 4) as usize;
+    let slice = std::slice::from_raw_parts(rgba_bytes, len);
+
+    let pixmap = djvu_rs::Pixmap {
+        width,
+        height,
+        data: slice.to_vec(),
+    };
+
+    let encoder = PageEncoder::from_pixmap(&pixmap).with_dpi(if dpi == 0 { 300 } else { dpi });
+
+    let djvu_bytes = match encoder.encode() {
+        Ok(b) => b,
+        Err(_) => return -2,
+    };
+
+    match std::fs::write(path_str, djvu_bytes) {
+        Ok(_) => 0,
+        Err(_) => -3,
+    }
 }
 
 #[no_mangle]

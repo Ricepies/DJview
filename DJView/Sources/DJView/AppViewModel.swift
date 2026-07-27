@@ -375,7 +375,7 @@ public final class AppViewModel: ObservableObject {
         pasteboard.setString(selectedText, forType: .string)
     }
 
-    // MARK: - PDF2DjVu Converter Engine with Background Dismiss & Cancel
+    // MARK: - PDF2DjVu Converter Engine with Native DjVu IW44/JB2 Encoder
     public func convertPDFToDjVu(pdfURL: URL, targetURL: URL) {
         guard let pdfDoc = PDFDocument(url: pdfURL), pdfDoc.pageCount > 0 else { return }
         let total = pdfDoc.pageCount
@@ -384,17 +384,13 @@ public final class AppViewModel: ObservableObject {
         isPDFConversionMinimized = false
         isConversionCancelled = false
         exportProgress = 0.0
-        exportStatusText = "Initializing pdf2djvu engine for \(pdfURL.lastPathComponent)..."
+        exportStatusText = "Initializing pdf2djvu encoder for \(pdfURL.lastPathComponent)..."
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pdf2djvu_\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
             for idx in 0..<total {
                 if self.isConversionCancelled {
-                    try? FileManager.default.removeItem(at: tempDir)
                     DispatchQueue.main.async {
                         self.isPDFConverting = false
                         self.exportStatusText = "Conversion cancelled."
@@ -405,7 +401,7 @@ public final class AppViewModel: ObservableObject {
                 let currentPct = Double(idx + 1) / Double(total)
                 DispatchQueue.main.async {
                     self.exportProgress = currentPct
-                    self.exportStatusText = "Converting Page \(idx + 1) of \(total) to DjVu..."
+                    self.exportStatusText = "Encoding PDF Page \(idx + 1) of \(total) to DjVu..."
                 }
 
                 if let page = pdfDoc.page(at: idx) {
@@ -414,35 +410,31 @@ public final class AppViewModel: ObservableObject {
                     let targetW = Int(bounds.width * scale)
                     let targetH = Int(bounds.height * scale)
 
-                    let img = NSImage(size: NSSize(width: targetW, height: targetH))
-                    img.lockFocus()
-                    if let ctx = NSGraphicsContext.current?.cgContext {
+                    let byteCount = targetW * targetH * 4
+                    var buffer = [UInt8](repeating: 0, count: byteCount)
+
+                    let colorSpace = CGColorSpaceCreateDeviceRGB()
+                    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+
+                    if let ctx = CGContext(
+                        data: &buffer,
+                        width: targetW,
+                        height: targetH,
+                        bitsPerComponent: 8,
+                        bytesPerRow: targetW * 4,
+                        space: colorSpace,
+                        bitmapInfo: bitmapInfo.rawValue
+                    ) {
                         ctx.setFillColor(NSColor.white.cgColor)
-                        ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
+                        ctx.fill(CGRect(x: 0, y: 0, width: CGFloat(targetW), height: CGFloat(targetH)))
                         ctx.scaleBy(x: scale, y: scale)
                         page.draw(with: .mediaBox, to: ctx)
-                    }
-                    img.unlockFocus()
 
-                    if let tiffData = img.tiffRepresentation,
-                       let rep = NSBitmapImageRep(data: tiffData),
-                       let pngData = rep.representation(using: .png, properties: [:]) {
-                        let pageFile = tempDir.appendingPathComponent(String(format: "%04d.png", idx + 1))
-                        try? pngData.write(to: pageFile)
+                        let res = djvu_encode_rgba_to_djvu(buffer, UInt32(targetW), UInt32(targetH), 300, targetURL.path)
+                        print("Encoded PDF Page \(idx + 1) to DjVu with result status code: \(res)")
                     }
                 }
             }
-
-            DispatchQueue.main.async {
-                self.exportStatusText = "Assembling DjVu Document..."
-            }
-
-            let pngFiles = (try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil))?.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) ?? []
-            if !pngFiles.isEmpty, let firstPNG = pngFiles.first {
-                try? FileManager.default.copyItem(at: firstPNG, to: targetURL)
-            }
-
-            try? FileManager.default.removeItem(at: tempDir)
 
             DispatchQueue.main.async {
                 self.isPDFConverting = false

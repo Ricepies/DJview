@@ -19,6 +19,7 @@ char* djvu_doc_get_bookmarks_json(DjVuDocContext* ctx);
 char* djvu_doc_get_text_zones_json(DjVuDocContext* ctx, uint32_t page_idx);
 char* djvu_doc_search_text_json(DjVuDocContext* ctx, const char* query);
 int32_t djvu_doc_export_page(DjVuDocContext* ctx, uint32_t page_idx, uint32_t format, const char* out_path);
+int32_t djvu_encode_rgba_to_djvu(const uint8_t* rgba_bytes, uint32_t width, uint32_t height, uint16_t dpi, const char* out_path);
 void djvu_string_free(char* ptr);
 
 #ifdef __cplusplus
