@@ -499,7 +499,9 @@ public final class AppViewModel: ObservableObject {
 
         let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
             guard let base = ptr.baseAddress else { return -1 }
-            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(currentPageIndex), UInt32(dw), UInt32(dh), UInt32(layerMode.rawValue), base)
+            var aw: UInt32 = 0
+            var ah: UInt32 = 0
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(currentPageIndex), UInt32(dw), UInt32(dh), UInt32(layerMode.rawValue), base, &aw, &ah)
         }
 
         if res == 0 {
@@ -775,7 +777,9 @@ public final class AppViewModel: ObservableObject {
 
             let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
                 guard let base = ptr.baseAddress else { return -1 }
-                return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pIdx), UInt32(w), UInt32(h), UInt32(self.layerMode.rawValue), base)
+                var aw: UInt32 = 0
+                var ah: UInt32 = 0
+                return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pIdx), UInt32(w), UInt32(h), UInt32(self.layerMode.rawValue), base, &aw, &ah)
             }
 
             if res == 0 {
@@ -849,9 +853,11 @@ public final class AppViewModel: ObservableObject {
         let byteCount = w * h * 4
         var buffer = [UInt8](repeating: 0, count: byteCount)
 
+        var aw: UInt32 = 0
+        var ah: UInt32 = 0
         let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
             guard let base = ptr.baseAddress else { return -1 }
-            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base, &aw, &ah)
         }
         guard res == 0 else { return nil }
 
@@ -884,9 +890,11 @@ public final class AppViewModel: ObservableObject {
         let byteCount = w * h * 4
         var buffer = [UInt8](repeating: 0, count: byteCount)
 
+        var aw: UInt32 = 0
+        var ah: UInt32 = 0
         let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
             guard let base = ptr.baseAddress else { return -1 }
-            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+            return djvu_doc_render_page_rgba(engine.docPtr, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base, &aw, &ah)
         }
         guard res == 0 else { return nil }
 

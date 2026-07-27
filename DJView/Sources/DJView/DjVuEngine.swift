@@ -62,18 +62,23 @@ public final class DjVuEngine {
 
             let byteCount = w * h * 4
             var buffer = [UInt8](repeating: 0, count: byteCount)
+            var actualW: UInt32 = 0
+            var actualH: UInt32 = 0
 
             let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
                 guard let base = ptr.baseAddress else { return -1 }
-                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base, &actualW, &actualH)
             }
 
-            guard res == 0 else {
+            guard res == 0, actualW > 0, actualH > 0 else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
 
-            let data = Data(buffer)
+            let finalW = Int(actualW)
+            let finalH = Int(actualH)
+
+            let data = Data(buffer.prefix(finalW * finalH * 4))
             guard let provider = CGDataProvider(data: data as CFData) else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -83,11 +88,11 @@ public final class DjVuEngine {
             let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
 
             guard let cgImage = CGImage(
-                width: w,
-                height: h,
+                width: finalW,
+                height: finalH,
                 bitsPerComponent: 8,
                 bitsPerPixel: 32,
-                bytesPerRow: w * 4,
+                bytesPerRow: finalW * 4,
                 space: colorSpace,
                 bitmapInfo: bitmapInfo,
                 provider: provider,
@@ -99,7 +104,7 @@ public final class DjVuEngine {
                 return
             }
 
-            let img = NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+            let img = NSImage(cgImage: cgImage, size: NSSize(width: finalW, height: finalH))
             self.pageCache.setObject(img, forKey: cacheKey)
 
             DispatchQueue.main.async {
@@ -134,22 +139,26 @@ public final class DjVuEngine {
 
             let byteCount = w * h * 4
             var buffer = [UInt8](repeating: 0, count: byteCount)
+            var actualW: UInt32 = 0
+            var actualH: UInt32 = 0
 
             let res = buffer.withUnsafeMutableBufferPointer { ptr -> Int32 in
                 guard let base = ptr.baseAddress else { return -1 }
-                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base)
+                return djvu_doc_render_page_rgba(ctx, UInt32(pageIndex), UInt32(w), UInt32(h), UInt32(layerMode.rawValue), base, &actualW, &actualH)
             }
 
-            guard res == 0 else {
+            guard res == 0, actualW > 0, actualH > 0 else {
                 DispatchQueue.main.async { completion(nil, 0, 0) }
                 return
             }
 
-            let data = Data(buffer)
+            let finalW = Int(actualW)
+            let finalH = Int(actualH)
+            let data = Data(buffer.prefix(finalW * finalH * 4))
             self.rawDataCache.setObject(data as NSData, forKey: cacheKey)
 
             DispatchQueue.main.async {
-                completion(data, w, h)
+                completion(data, finalW, finalH)
             }
         }
     }

@@ -168,6 +168,8 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
     target_height: u32,
     layer_mode: u32,
     out_buf: *mut u8,
+    out_actual_width: *mut u32,
+    out_actual_height: *mut u32,
 ) -> i32 {
     if ctx.is_null() || out_buf.is_null() {
         return -1;
@@ -217,9 +219,22 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -2,
     };
 
-    let expected_len = (pixmap.width * pixmap.height * 4) as usize;
-    let out_slice = std::slice::from_raw_parts_mut(out_buf, expected_len);
-    out_slice.copy_from_slice(&pixmap.data);
+    if !out_actual_width.is_null() {
+        *out_actual_width = pixmap.width;
+    }
+    if !out_actual_height.is_null() {
+        *out_actual_height = pixmap.height;
+    }
+
+    let buf_cap = if target_width > 0 && target_height > 0 {
+        (target_width * target_height * 4) as usize
+    } else {
+        (pixmap.width * pixmap.height * 4) as usize
+    };
+
+    let copy_len = pixmap.data.len().min(buf_cap);
+    let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
+    out_slice.copy_from_slice(&pixmap.data[..copy_len]);
 
     0
 }
