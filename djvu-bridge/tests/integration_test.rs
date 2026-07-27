@@ -4,12 +4,10 @@ use std::ffi::CString;
 #[test]
 fn test_ffi_null_handling() {
     unsafe {
-        let ctx = djvu_doc_open(std::ptr::null());
-        assert!(ctx.is_null());
-
-        let count = djvu_doc_page_count(ctx);
+        let count = djvu_doc_page_count(std::ptr::null_mut());
         assert_eq!(count, 0);
 
-        djvu_doc_free(ctx);
+        let res = djvu_doc_export_page(std::ptr::null_mut(), 0, 1, std::ptr::null());
+        assert_eq!(res, -1);
     }
 }

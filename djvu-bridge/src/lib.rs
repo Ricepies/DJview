@@ -322,7 +322,11 @@ pub unsafe extern "C" fn djvu_doc_export_page(
 
     let save_res = match format {
         0 => img_buf.save_with_format(path_str, image::ImageFormat::Png),
-        1 => img_buf.save_with_format(path_str, image::ImageFormat::Jpeg),
+        1 => {
+            // JPEG requires RGB8 (no alpha channel). Convert RGBA to RGB8
+            let rgb_img = image::DynamicImage::ImageRgba8(img_buf).to_rgb8();
+            rgb_img.save_with_format(path_str, image::ImageFormat::Jpeg)
+        }
         _ => img_buf.save_with_format(path_str, image::ImageFormat::Png),
     };
 
