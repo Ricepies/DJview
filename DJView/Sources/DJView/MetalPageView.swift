@@ -25,14 +25,14 @@ public struct MetalPageView: NSViewRepresentable {
     public func makeNSView(context: Context) -> MTKView {
         let mtkView = MTKView()
         mtkView.clearColor = MTLClearColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1.0)
-        mtkView.enableSetNeedsDisplay = false
-        mtkView.isPaused = false
+        mtkView.enableSetNeedsDisplay = true
+        mtkView.isPaused = true
 
         if let renderer = MetalPageRenderer(metalView: mtkView) {
             context.coordinator.renderer = renderer
             renderer.shaderMode = shaderMode
             if let data = rawData, width > 0, height > 0 {
-                renderer.updateTexture(rgbaData: data, width: width, height: height)
+                renderer.updateTexture(rgbaData: data, width: width, height: height, metalView: mtkView)
             }
         }
 
@@ -43,7 +43,8 @@ public struct MetalPageView: NSViewRepresentable {
         guard let renderer = context.coordinator.renderer else { return }
         renderer.shaderMode = shaderMode
         if let data = rawData, width > 0, height > 0 {
-            renderer.updateTexture(rgbaData: data, width: width, height: height)
+            renderer.updateTexture(rgbaData: data, width: width, height: height, metalView: nsView)
         }
+        nsView.needsDisplay = true
     }
 }

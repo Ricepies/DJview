@@ -3,10 +3,116 @@ import AppKit
 import CoreGraphics
 import CDjVuBridge
 
+// MARK: - FFI JSON Decoding Wrappers
+private struct RawTextZone: Codable {
+    let kind: String
+    let text: String
+    let x: UInt32
+    let y: UInt32
+    let width: UInt32
+    let height: UInt32
+    let children: [RawTextZone]
+}
+
+private struct RawSearchResult: Codable {
+    let page: Int
+    let text: String
+    let x: UInt32
+    let y: UInt32
+    let width: UInt32
+    let height: UInt32
+}
+
+// MARK: - O(1) LRU Cache Data Structure (Doubly-Linked List + Hash Map)
+final class LRUNode<K: Hashable, V> {
+    let key: K
+    var value: V
+    var prev: LRUNode?
+    var next: LRUNode?
+
+    init(key: K, value: V) {
+        self.key = key
+        self.value = value
+    }
+}
+
+final class LRUCache<K: Hashable, V> {
+    private let capacity: Int
+    private var map = [K: LRUNode<K, V>]()
+    private var head: LRUNode<K, V>?
+    private var tail: LRUNode<K, V>?
+    private let lock = NSLock()
+
+    init(capacity: Int) {
+        self.capacity = max(1, capacity)
+    }
+
+    func get(_ key: K) -> V? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let node = map[key] else { return nil }
+        moveToHead(node)
+        return node.value
+    }
+
+    func set(_ key: K, _ value: V) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let node = map[key] {
+            node.value = value
+            moveToHead(node)
+        } else {
+            let node = LRUNode(key: key, value: value)
+            map[key] = node
+            addToHead(node)
+            if map.count > capacity {
+                removeTail()
+            }
+        }
+    }
+
+    private func moveToHead(_ node: LRUNode<K, V>) {
+        if node === head { return }
+        removeNode(node)
+        addToHead(node)
+    }
+
+    private func addToHead(_ node: LRUNode<K, V>) {
+        node.next = head
+        node.prev = nil
+        if let h = head {
+            h.prev = node
+        }
+        head = node
+        if tail == nil {
+            tail = node
+        }
+    }
+
+    private func removeNode(_ node: LRUNode<K, V>) {
+        if let prev = node.prev {
+            prev.next = node.next
+        } else {
+            head = node.next
+        }
+        if let next = node.next {
+            next.prev = node.prev
+        } else {
+            tail = node.prev
+        }
+    }
+
+    private func removeTail() {
+        guard let t = tail else { return }
+        map.removeValue(forKey: t.key)
+        removeNode(t)
+    }
+}
+
 public final class DjVuEngine {
     public let docPtr: OpaquePointer
-    private let pageCache = NSCache<NSString, NSImage>()
-    private let rawDataCache = NSCache<NSString, NSData>()
+    private let pageCache = LRUCache<String, NSImage>(capacity: 20)
+    private let rawDataCache = LRUCache<String, Data>(capacity: 20)
 
     public var pageCount: Int {
         Int(djvu_doc_page_count(docPtr))
@@ -17,10 +123,6 @@ public final class DjVuEngine {
             return nil
         }
         self.docPtr = ctx
-
-        // Configure cache limits for high-performance lazy loading
-        pageCache.countLimit = 40
-        rawDataCache.countLimit = 40
     }
 
     deinit {
@@ -43,8 +145,8 @@ public final class DjVuEngine {
         layerMode: LayerMode = .composite,
         completion: @escaping (NSImage?) -> Void
     ) {
-        let cacheKey = "\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)" as NSString
-        if let cached = pageCache.object(forKey: cacheKey) {
+        let cacheKey = "\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)"
+        if let cached = pageCache.get(cacheKey) {
             completion(cached)
             return
         }
@@ -105,7 +207,7 @@ public final class DjVuEngine {
             }
 
             let img = NSImage(cgImage: cgImage, size: NSSize(width: finalW, height: finalH))
-            self.pageCache.setObject(img, forKey: cacheKey)
+            self.pageCache.set(cacheKey, img)
 
             DispatchQueue.main.async {
                 completion(img)
@@ -120,9 +222,9 @@ public final class DjVuEngine {
         layerMode: LayerMode = .composite,
         completion: @escaping (Data?, Int, Int) -> Void
     ) {
-        let cacheKey = "raw_\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)" as NSString
-        if let cached = rawDataCache.object(forKey: cacheKey) {
-            completion(cached as Data, targetWidth, targetHeight)
+        let cacheKey = "raw_\(pageIndex)_\(targetWidth)_\(targetHeight)_\(layerMode.rawValue)"
+        if let cached = rawDataCache.get(cacheKey) {
+            completion(cached, targetWidth, targetHeight)
             return
         }
 
@@ -155,7 +257,7 @@ public final class DjVuEngine {
             let finalW = Int(actualW)
             let finalH = Int(actualH)
             let data = Data(buffer.prefix(finalW * finalH * 4))
-            self.rawDataCache.setObject(data as NSData, forKey: cacheKey)
+            self.rawDataCache.set(cacheKey, data)
 
             DispatchQueue.main.async {
                 completion(data, finalW, finalH)
@@ -170,6 +272,12 @@ public final class DjVuEngine {
         }
     }
 
+    public func exportPage(pageIndex: Int, format: Int, outputPath: String) -> Bool {
+        guard let pathCStr = outputPath.cString(using: .utf8) else { return false }
+        let res = djvu_doc_export_page(docPtr, UInt32(pageIndex), UInt32(format), pathCStr)
+        return res == 0
+    }
+
     public func getBookmarks() -> [BookmarkItem] {
         guard let cStr = djvu_doc_get_bookmarks_json(docPtr) else { return [] }
         defer { djvu_string_free(cStr) }
@@ -182,20 +290,34 @@ public final class DjVuEngine {
         guard let cStr = djvu_doc_get_text_zones_json(docPtr, UInt32(pageIndex)) else { return [] }
         defer { djvu_string_free(cStr) }
         let jsonStr = String(cString: cStr)
+        if jsonStr == "null" { return [] }
         guard let data = jsonStr.data(using: .utf8) else { return [] }
-        return (try? JSONDecoder().decode([TextZone].self, from: data)) ?? []
+        guard let rawZones = try? JSONDecoder().decode([RawTextZone].self, from: data) else { return [] }
+        return rawZones.map { convertRawTextZone($0) }
     }
 
     public func searchText(query: String) -> [SearchResult] {
-        guard let cStr = djvu_doc_search_text_json(docPtr, query) else { return [] }
+        guard let queryCStr = query.cString(using: .utf8) else { return [] }
+        guard let cStr = djvu_doc_search_text_json(docPtr, queryCStr) else { return [] }
         defer { djvu_string_free(cStr) }
         let jsonStr = String(cString: cStr)
         guard let data = jsonStr.data(using: .utf8) else { return [] }
-        return (try? JSONDecoder().decode([SearchResult].self, from: data)) ?? []
+        guard let rawResults = try? JSONDecoder().decode([RawSearchResult].self, from: data) else { return [] }
+        return rawResults.map {
+            SearchResult(
+                page: $0.page,
+                text: $0.text,
+                rect: CGRect(x: Double($0.x), y: Double($0.y), width: Double($0.width), height: Double($0.height))
+            )
+        }
     }
 
-    public func exportPage(pageIndex: Int, format: Int, outputPath: String) -> Bool {
-        let res = djvu_doc_export_page(docPtr, UInt32(pageIndex), UInt32(format), outputPath)
-        return res == 0
+    private func convertRawTextZone(_ raw: RawTextZone) -> TextZone {
+        TextZone(
+            text: raw.text,
+            rect: CGRect(x: Double(raw.x), y: Double(raw.y), width: Double(raw.width), height: Double(raw.height)),
+            kind: raw.kind,
+            children: raw.children.map { convertRawTextZone($0) }
+        )
     }
 }

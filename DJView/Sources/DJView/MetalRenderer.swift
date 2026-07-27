@@ -22,8 +22,9 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         metalView.device = defaultDevice
         metalView.colorPixelFormat = .bgra8Unorm
         metalView.framebufferOnly = true
-        metalView.enableSetNeedsDisplay = false
-        metalView.isPaused = false
+        // Set event-driven rendering: render ONLY when content changes, 0% GPU idle!
+        metalView.enableSetNeedsDisplay = true
+        metalView.isPaused = true
 
         super.init()
         metalView.delegate = self
@@ -116,7 +117,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         self.samplerState = device.makeSamplerState(descriptor: samplerDesc)
     }
 
-    public func updateTexture(rgbaData: Data, width: Int, height: Int) {
+    public func updateTexture(rgbaData: Data, width: Int, height: Int, metalView: MTKView? = nil) {
         guard width > 0 && height > 0 else { return }
 
         if let tex = texture, tex.width == width && tex.height == height {
@@ -130,6 +131,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
                     )
                 }
             }
+            metalView?.needsDisplay = true
             return
         }
 
@@ -156,6 +158,7 @@ public final class MetalPageRenderer: NSObject, MTKViewDelegate {
         }
 
         self.texture = newTexture
+        metalView?.needsDisplay = true
     }
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}

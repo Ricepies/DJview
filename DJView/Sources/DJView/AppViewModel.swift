@@ -725,7 +725,7 @@ public final class AppViewModel: ObservableObject {
             </body>
             </html>
             """
-            try? xhtmlContent.write(to: ops.appendingPathComponent(xhtmlName), atomically: true, encoding: .utf8)
+            try? xhtmlContent.write(to: ops.appendingPathComponent(xhtmlName), atomically: true, encoding: String.Encoding.utf8)
 
             manifestItems.append("<item id=\"\(pageId)\" href=\"\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>")
             manifestItems.append("<item id=\"img_\(pageId)\" href=\"images/\(imgName)\" media-type=\"image/jpeg\"/>")
