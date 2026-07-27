@@ -181,6 +181,20 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         Err(_) => return -1,
     };
 
+    // Enforce min 1024px render dimension so IW44 wavelets do not hit octave downsample limits (which cause grey chunks below 43% zoom)
+    let (req_w, req_h) = if target_width > 0 && target_height > 0 {
+        let min_dim: f32 = 1024.0;
+        let max_req = (target_width as f32).max(target_height as f32);
+        if max_req < min_dim {
+            let mult = min_dim / max_req;
+            ((target_width as f32 * mult) as u32, (target_height as f32 * mult) as u32)
+        } else {
+            (target_width, target_height)
+        }
+    } else {
+        (0, 0)
+    };
+
     let pixmap_res = match layer_mode {
         3 => {
             if let Ok(Some(bitmap)) = page.decode_mask() {
@@ -203,16 +217,16 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
                     height: bh,
                     data,
                 };
-                if target_width > 0 && target_height > 0 && (bw != target_width || bh != target_height) {
-                    page.render_to_size(target_width, target_height)
+                if req_w > 0 && req_h > 0 && (bw != req_w || bh != req_h) {
+                    page.render_to_size(req_w, req_h)
                 } else {
                     Ok(pm)
                 }
             } else {
-                page.render_to_size(target_width, target_height)
+                page.render_to_size(req_w, req_h)
             }
         }
-        _ => page.render_to_size(target_width, target_height),
+        _ => page.render_to_size(req_w, req_h),
     };
 
     let pixmap = match pixmap_res {
@@ -227,12 +241,7 @@ pub unsafe extern "C" fn djvu_doc_render_page_rgba(
         *out_actual_height = pixmap.height;
     }
 
-    let buf_cap = if target_width > 0 && target_height > 0 {
-        (target_width * target_height * 4) as usize
-    } else {
-        (pixmap.width * pixmap.height * 4) as usize
-    };
-
+    let buf_cap = (pixmap.width * pixmap.height * 4) as usize;
     let copy_len = pixmap.data.len().min(buf_cap);
     let out_slice = std::slice::from_raw_parts_mut(out_buf, copy_len);
     out_slice.copy_from_slice(&pixmap.data[..copy_len]);
