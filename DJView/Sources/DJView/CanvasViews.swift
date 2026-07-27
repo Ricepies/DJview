@@ -490,8 +490,13 @@ public struct SinglePageContainerView: View {
 
     private func loadPageData() {
         let dim = viewModel.engine?.getPageDimension(pageIndex: pageIndex) ?? (600, 800, 72)
-        let targetW = Int(CGFloat(dim.width) * CGFloat(viewModel.zoomScale))
-        let targetH = Int(CGFloat(dim.height) * CGFloat(viewModel.zoomScale))
+        let rawW = CGFloat(dim.width) * CGFloat(viewModel.zoomScale)
+        let rawH = CGFloat(dim.height) * CGFloat(viewModel.zoomScale)
+        let maxDim: CGFloat = 2048.0
+        let scale = min(1.0, maxDim / max(rawW, rawH))
+
+        let targetW = max(1, Int(rawW * scale))
+        let targetH = max(1, Int(rawH * scale))
 
         if viewModel.useMetalRenderer {
             viewModel.engine?.renderPageRawRGBA(pageIndex: pageIndex, targetWidth: targetW, targetHeight: targetH, layerMode: viewModel.layerMode) { data, w, h in

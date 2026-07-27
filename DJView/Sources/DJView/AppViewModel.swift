@@ -415,7 +415,7 @@ public final class AppViewModel: ObservableObject {
 
                 autoreleasepool {
                     if let page = pdfDoc.page(at: idx),
-                       let pngData = self.renderPDFPageToPNGData(page: page, scale: 2.0) {
+                       let pngData = self.renderPDFPageToPNGData(page: page, scale: 1.5) {
                         pngData.withUnsafeBytes { rawBuffer in
                             if let base = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) {
                                 let addRes = djvu_encoder_add_png_page(encoder, base, UInt32(pngData.count))
@@ -451,17 +451,21 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    private func renderPDFPageToPNGData(page: PDFPage, scale: CGFloat = 2.0) -> Data? {
+    private func renderPDFPageToPNGData(page: PDFPage, scale: CGFloat = 1.5) -> Data? {
         let bounds = page.bounds(for: .mediaBox)
-        let w = Int(bounds.width * scale)
-        let h = Int(bounds.height * scale)
+        let maxDim: CGFloat = 2048.0
+        let currentMax = max(bounds.width, bounds.height)
+        let fitScale = min(scale, maxDim / max(1.0, currentMax))
+
+        let w = Int(bounds.width * fitScale)
+        let h = Int(bounds.height * fitScale)
 
         let img = NSImage(size: NSSize(width: w, height: h))
         img.lockFocus()
         if let ctx = NSGraphicsContext.current?.cgContext {
             ctx.setFillColor(NSColor.white.cgColor)
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-            ctx.scaleBy(x: scale, y: scale)
+            ctx.scaleBy(x: fitScale, y: fitScale)
             page.draw(with: .mediaBox, to: ctx)
         }
         img.unlockFocus()
