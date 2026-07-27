@@ -97,25 +97,25 @@ public struct MainView: View {
                 // Page Flipping Shortcuts: Left/Right & Up/Down Arrows
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.previousPage()
+                        viewModel.previousPage(vertical: false)
                     }
                 }) { EmptyView() }.keyboardShortcut(.leftArrow, modifiers: [])
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.nextPage()
+                        viewModel.nextPage(vertical: false)
                     }
                 }) { EmptyView() }.keyboardShortcut(.rightArrow, modifiers: [])
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.previousPage()
+                        viewModel.previousPage(vertical: true)
                     }
                 }) { EmptyView() }.keyboardShortcut(.upArrow, modifiers: [])
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.nextPage()
+                        viewModel.nextPage(vertical: true)
                     }
                 }) { EmptyView() }.keyboardShortcut(.downArrow, modifiers: [])
 
@@ -315,7 +315,7 @@ struct CanvasFloatingHUD: View {
             HStack(spacing: 8) {
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.previousPage()
+                        viewModel.previousPage(vertical: false)
                     }
                 }) {
                     Image(systemName: "chevron.left")
@@ -330,7 +330,7 @@ struct CanvasFloatingHUD: View {
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.nextPage()
+                        viewModel.nextPage(vertical: false)
                     }
                 }) {
                     Image(systemName: "chevron.right")

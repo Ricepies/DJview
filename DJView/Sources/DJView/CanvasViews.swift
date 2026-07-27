@@ -112,6 +112,31 @@ public struct SinglePageCanvasView: View {
         self.viewModel = viewModel
     }
 
+    private var currentTransition: AnyTransition {
+        switch viewModel.pageTurnDirection {
+        case .forwardHorizontal:
+            return .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            )
+        case .backwardHorizontal:
+            return .asymmetric(
+                insertion: .move(edge: .leading).combined(with: .opacity),
+                removal: .move(edge: .trailing).combined(with: .opacity)
+            )
+        case .forwardVertical:
+            return .asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .move(edge: .top).combined(with: .opacity)
+            )
+        case .backwardVertical:
+            return .asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity),
+                removal: .move(edge: .bottom).combined(with: .opacity)
+            )
+        }
+    }
+
     public var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
             ZStack {
@@ -120,17 +145,7 @@ public struct SinglePageCanvasView: View {
                     viewModel: viewModel
                 )
                 .id("single_\(viewModel.currentPageIndex)")
-                .transition(
-                    viewModel.pageTurnDirection == .forward
-                    ? .asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                      )
-                    : .asymmetric(
-                        insertion: .move(edge: .leading).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
-                      )
-                )
+                .transition(currentTransition)
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -175,31 +190,54 @@ public struct SinglePageCanvasView: View {
             }
 
             let now = Date()
-            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.40 else {
+            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.38 else {
                 return nil
             }
 
             let dx = event.scrollingDeltaX
             let dy = event.scrollingDeltaY
 
-            if dx < -5.0 || dy < -5.0 {
-                hasTriggeredInCurrentGesture = true
-                lastFlipTime = now
-                DispatchQueue.main.async {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.nextPage()
+            // Distinguish horizontal (dx) vs vertical (dy) swipe direction for matching animation
+            if abs(dx) > abs(dy) {
+                if dx < -5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.nextPage(vertical: false)
+                        }
                     }
-                }
-                return nil
-            } else if dx > 5.0 || dy > 5.0 {
-                hasTriggeredInCurrentGesture = true
-                lastFlipTime = now
-                DispatchQueue.main.async {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.previousPage()
+                    return nil
+                } else if dx > 5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.previousPage(vertical: false)
+                        }
                     }
+                    return nil
                 }
-                return nil
+            } else {
+                if dy < -5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.nextPage(vertical: true)
+                        }
+                    }
+                    return nil
+                } else if dy > 5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.previousPage(vertical: true)
+                        }
+                    }
+                    return nil
+                }
             }
             return event
         }
@@ -224,6 +262,31 @@ public struct MangaPageView: View {
         self.viewModel = viewModel
     }
 
+    private var currentTransition: AnyTransition {
+        switch viewModel.pageTurnDirection {
+        case .forwardHorizontal:
+            return .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            )
+        case .backwardHorizontal:
+            return .asymmetric(
+                insertion: .move(edge: .leading).combined(with: .opacity),
+                removal: .move(edge: .trailing).combined(with: .opacity)
+            )
+        case .forwardVertical:
+            return .asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .move(edge: .top).combined(with: .opacity)
+            )
+        case .backwardVertical:
+            return .asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity),
+                removal: .move(edge: .bottom).combined(with: .opacity)
+            )
+        }
+    }
+
     public var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
             HStack(spacing: 16) {
@@ -239,17 +302,7 @@ public struct MangaPageView: View {
                 SinglePageContainerView(pageIndex: rightIndex, viewModel: viewModel)
                     .id("manga_right_\(rightIndex)")
             }
-            .transition(
-                viewModel.pageTurnDirection == .forward
-                ? .asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                  )
-                : .asymmetric(
-                    insertion: .move(edge: .leading).combined(with: .opacity),
-                    removal: .move(edge: .trailing).combined(with: .opacity)
-                  )
-            )
+            .transition(currentTransition)
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -293,31 +346,53 @@ public struct MangaPageView: View {
             }
 
             let now = Date()
-            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.40 else {
+            guard !hasTriggeredInCurrentGesture && now.timeIntervalSince(lastFlipTime) > 0.38 else {
                 return nil
             }
 
             let dx = event.scrollingDeltaX
             let dy = event.scrollingDeltaY
 
-            if dx < -5.0 || dy < -5.0 {
-                hasTriggeredInCurrentGesture = true
-                lastFlipTime = now
-                DispatchQueue.main.async {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.nextPage()
+            if abs(dx) > abs(dy) {
+                if dx < -5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.nextPage(vertical: false)
+                        }
                     }
-                }
-                return nil
-            } else if dx > 5.0 || dy > 5.0 {
-                hasTriggeredInCurrentGesture = true
-                lastFlipTime = now
-                DispatchQueue.main.async {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        viewModel.previousPage()
+                    return nil
+                } else if dx > 5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.previousPage(vertical: false)
+                        }
                     }
+                    return nil
                 }
-                return nil
+            } else {
+                if dy < -5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.nextPage(vertical: true)
+                        }
+                    }
+                    return nil
+                } else if dy > 5.0 {
+                    hasTriggeredInCurrentGesture = true
+                    lastFlipTime = now
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            viewModel.previousPage(vertical: true)
+                        }
+                    }
+                    return nil
+                }
             }
             return event
         }

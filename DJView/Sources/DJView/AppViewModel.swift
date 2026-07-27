@@ -22,8 +22,10 @@ public enum SidebarTab: String, CaseIterable, Identifiable {
 }
 
 public enum PageTurnDirection {
-    case forward
-    case backward
+    case forwardHorizontal
+    case backwardHorizontal
+    case forwardVertical
+    case backwardVertical
 }
 
 // MARK: - Standard DjVu ANTZ Annotation / Metadata Sidecar Structure
@@ -47,7 +49,7 @@ public final class AppViewModel: ObservableObject {
     @Published public var engine: DjVuEngine?
     @Published public var documentURL: URL?
     @Published public var currentPageIndex: Int = 0
-    @Published public var pageTurnDirection: PageTurnDirection = .forward
+    @Published public var pageTurnDirection: PageTurnDirection = .forwardHorizontal
     @Published public var targetJumpPageIndex: Int? = nil
     @Published public var isDirectJump: Bool = false
     @Published public var totalPages: Int = 0
@@ -114,7 +116,7 @@ public final class AppViewModel: ObservableObject {
         self.documentURL = url
         self.totalPages = engine.pageCount
         self.currentPageIndex = 0
-        self.pageTurnDirection = .forward
+        self.pageTurnDirection = .forwardHorizontal
         self.isDirectJump = true
         self.targetJumpPageIndex = 0
 
@@ -132,12 +134,12 @@ public final class AppViewModel: ObservableObject {
         isRestoringState = false
     }
 
-    public func goToPage(_ pageIndex: Int, animated: Bool = true) {
+    public func goToPage(_ pageIndex: Int, animated: Bool = true, vertical: Bool = false) {
         guard pageIndex >= 0 && pageIndex < totalPages else { return }
         if pageIndex > currentPageIndex {
-            pageTurnDirection = .forward
+            pageTurnDirection = vertical ? .forwardVertical : .forwardHorizontal
         } else if pageIndex < currentPageIndex {
-            pageTurnDirection = .backward
+            pageTurnDirection = vertical ? .backwardVertical : .backwardHorizontal
         }
         currentPageIndex = pageIndex
         isDirectJump = !animated
@@ -149,25 +151,25 @@ public final class AppViewModel: ObservableObject {
     public func setCurrentPageFromScroll(_ pageIndex: Int) {
         guard pageIndex >= 0 && pageIndex < totalPages && pageIndex != currentPageIndex else { return }
         if pageIndex > currentPageIndex {
-            pageTurnDirection = .forward
+            pageTurnDirection = .forwardVertical
         } else if pageIndex < currentPageIndex {
-            pageTurnDirection = .backward
+            pageTurnDirection = .backwardVertical
         }
         currentPageIndex = pageIndex
         loadTextLayer(pageIndex: pageIndex)
         saveReadingPosition()
     }
 
-    public func nextPage() {
+    public func nextPage(vertical: Bool = false) {
         let step = (layoutMode == .manga) ? 2 : 1
-        pageTurnDirection = .forward
-        goToPage(min(totalPages - 1, currentPageIndex + step), animated: true)
+        pageTurnDirection = vertical ? .forwardVertical : .forwardHorizontal
+        goToPage(min(totalPages - 1, currentPageIndex + step), animated: true, vertical: vertical)
     }
 
-    public func previousPage() {
+    public func previousPage(vertical: Bool = false) {
         let step = (layoutMode == .manga) ? 2 : 1
-        pageTurnDirection = .backward
-        goToPage(max(0, currentPageIndex - step), animated: true)
+        pageTurnDirection = vertical ? .backwardVertical : .backwardHorizontal
+        goToPage(max(0, currentPageIndex - step), animated: true, vertical: vertical)
     }
 
     public func setZoomScale(_ scale: Double) {
